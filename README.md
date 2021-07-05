@@ -12,6 +12,10 @@ On Windows
 pip install boto3
 (In an admin cmd shell)
 
+Using environment variables
+    AWS_ACCESS_KEY_ID = XXXXXXXXXXXXXXXXXXXX
+    AWS_SECRET_ACCESS_KEY = YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
+
 <h2>Preparation and Application Setup</h2>
 <p>
 The following steps should be taken when setting up this container:<br>
