@@ -6,7 +6,7 @@ Linux:
     ~/.aws/credentials
 
 Windows:
-    C:\Users\USERNAME\.aws\credentials
+    C:\Users\USERNAME\\.aws\credentials
 
 On Windows
 pip install boto3
@@ -28,11 +28,11 @@ The following steps should be taken when setting up this container:<br>
   <li>If you want to use reverse proxy to have a number of sub-domain URLs pointing to a number of resources on your IP set up address then set up your records as listed below.</li>
 </ol>
 
-<h3>Setup the container</h3>
+<h3>Setup the app</h3>
 <ol start="6">
-  <li>Create the configuration directory on the mapped docker share directory.</li>
-  <li>Create the .ini file with the nessesary information in the mapped docker share directory.</li>
-  <li>Add the container to your system and start.</li>
+  <li>Create the configuration directory or use the working directory of the app.</li>
+  <li>Create the .ini file with the nessesary information.</li>
+  <li>Add the credentials file to your system or set the environment variables and start.</li>
 </ol>
 </p>
 
@@ -133,9 +133,12 @@ The parameters for the configuration file are as follows.
 <td>The time-to-live value for your entries in seconds. 1-2 hours is usual, less than 5 minutes is not recomended. Values below 60 are ignored and set to 60 seconds.</td>
 </tr>
 </tbody></table>
-<br>
 </p>
 <p>The example file above shows two main options for configuring an address. The first updates a specific A record in the hosted domain so that <b><i>home.yourdomain.com</b></i> is given the external IP address. This is the most simple case and you must create an A-Record with the name <b><i>home.yourdomain.com</b></i> in AWS before it can be updated.</p>
 <p>
 The second and third lines show a more flexible option that would allow you to create multiple sub-domain mappings to resources within your network using reverse proxy. To make this work you must create an A-Record within you hosted zone (domain) called <b><i>yourdomain.click</b></i> and then a second A-Record called <b><i>*.yourdomain.click</b></i> that has a value of <b><i>yourdomain.click</b></i>. This will cause any DNS request for sub-domains of this address such as <b><i>voip.yourdomain.click</b></i> or <b><i>sonarr.yourdomain.click</b></i> to be mapped through to the IP address set up in the <b><i>yourdomain.click</b></i> A-Record.
 </p>
+
+<p><b>If you find this container useful then please consider</b> <a href="https://www.paypal.com/donate?hosted_button_id=N6F4E9YCD5VC8">buying me a coffee by following this link or scanning the QR below.</a> :)</p>
+
+<a href="https://www.paypal.com/donate?hosted_button_id=N6F4E9YCD5VC8"> <img src="http://www.ajwm.uk/dockerdonate.jpg" alt="Please consider donating" width="120" height="120"> </a>
