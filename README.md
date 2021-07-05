@@ -2,19 +2,20 @@
 The Amazon AWS DDNS Client
 
 # Credentials file
+Default locations: <br>
 Linux: <br>
-    ~/.aws/credentials <br>
+> ~/.aws/credentials <br>
 
 Windows: <br>
-    C:\Users\USERNAME\\.aws\credentials <br>
+> C:\Users\USERNAME\\.aws\credentials <br>
 
 On Windows <br>
-    pip install boto3 <br>
+> pip install boto3 <br>
 (In an admin cmd shell) <br>
 
 Using environment variables <br>
-    AWS_ACCESS_KEY_ID = XXXXXXXXXXXXXXXXXXXX <br>
-    AWS_SECRET_ACCESS_KEY = YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY <br>
+> AWS_ACCESS_KEY_ID = XXXXXXXXXXXXXXXXXXXX <br>
+> AWS_SECRET_ACCESS_KEY = YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY <br>
 
 <h2>Preparation and Application Setup</h2>
 <p>
