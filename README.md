@@ -1,24 +1,51 @@
 # Amazon_AWS_DDNS_Client
 The Amazon AWS DDNS Client
 
+## History
+<table>
+<thead>
+<tr bgcolor="lightblue"><th align="center">Date</th>
+<th>Version</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">8/7/21</td>
+<td align="left">2.0.0.2</td>
+<td align="left">
+  <ol>
+  <li>Added support for docker health checking, if needed, using a "touched" file</li>
+  <li>Added support for an environment variable, HEALTHCHECK_HEARTBEAT_FILE, defining the file path and name.</li>
+  <li><b>Note, a failure to go round the main program loop or a configuration issue resulting in an issue updating a domain record will prevent the health check file from being "touched". Be mindful of this if your system is set to restart a conatiner that marks itself as unhealthy as the solution may be to check the log to find a logical issue in the AWS configuration which caused the condition rather than just restarting it.</b></li>
+  <li>Added Config parameters Sleep_Time_Initial_Autherisation and Sleep_Time_Inter_Domain to control the hit rate on AWS</li>
+  <li>Changes to support re-reading a config file if it's edited while the app is running. This removes the need to re-start the app/container if the configuration is changed. This is intended to harden the system and lower maintainance.</li>
+  </ol>
+</td>
+</tr>
+</tbody></table>
+
 # Credentials file
+The AWS credentials file needs to be present on your system. Dafult locations where the file will be found are:<br>
+
+Default locations: <br>
 Linux: <br>
-    ~/.aws/credentials <br>
+> ~/.aws/credentials <br>
 
 Windows: <br>
-    C:\Users\USERNAME\\.aws\credentials <br>
-
-On Windows <br>
-    pip install boto3 <br>
-(In an admin cmd shell) <br>
+> C:\Users\USERNAME\\.aws\credentials <br>
 
 Using environment variables <br>
-    AWS_ACCESS_KEY_ID = XXXXXXXXXXXXXXXXXXXX <br>
-    AWS_SECRET_ACCESS_KEY = YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY <br>
+> AWS_ACCESS_KEY_ID = XXXXXXXXXXXXXXXXXXXX <br>
+> AWS_SECRET_ACCESS_KEY = YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY <br>
 
 <h2>Preparation and Application Setup</h2>
 <p>
 The following steps should be taken when setting up this container:<br>
+Install the BOTO3 package:<br>
+On Windows <br>
+> pip install boto3 <br>
+(In an admin cmd shell) <br>
+
 <h3>Prepair an AWS key</h3>
 <ol>
   <li>Get an AWS IAM key pair</li>
@@ -60,6 +87,9 @@ Exception_Interval = 300
 Log_Level_Logfile = Info 
 Log_Level_Console = Warning 
 TTL = 3211
+TTL = 3210
+Sleep_Time_Initial_Autherisation = 1
+Sleep_Time_Inter_Domain = 1
 </tt></pre>
 
 <h2>The Configuration File Parameters</h2>
@@ -135,6 +165,12 @@ The parameters for the configuration file are as follows.
 <td>Optional</td>
 <td>3600</td>
 <td>The time-to-live value for your entries in seconds. 1-2 hours is usual, less than 5 minutes is not recomended. Values below 60 are ignored and set to 60 seconds.</td>
+</tr>
+<tr>
+<td align="left">Sleep_Time_Inter_Domain </td>
+<td>Optional</td>
+<td>1</td>
+<td>The time to pause between consucutive domain interrogations.</td>
 </tr>
 </tbody></table>
 </p>
