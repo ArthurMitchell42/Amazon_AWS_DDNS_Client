@@ -10,20 +10,60 @@ from urllib.error import URLError
 import botocore
 import boto3
 import time
-import os
+import os                   # For enviromnent variables
+import pathlib              # For file touching
 
 #====================================================================================================
-# Global definitions
+# Global definitions and environment variables
 #====================================================================================================
 try:
     File_Paths = os.environ['AWS_CONFIG_PATH']
 except KeyError: 
-    print("Environment variable 'AWS_CONFIG_PATH' not found.")
+    print("Environment variable 'AWS_CONFIG_PATH' not found. Defaulting to CWD.")
     File_Paths = ""
+
+try:
+    Healthcheck_Heartbeat_File_Name = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
+    Heartbeat_Enabled = True
+    pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
+except KeyError: 
+    Healthcheck_Heartbeat_File_Name = ""
+    Heartbeat_Enabled = False
+
+Docker_Version = os.environ.get('AWS_DOCKER_VERSION', 'None')
 
 Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
 Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
 log = logging.getLogger('AWS_Route53_DDNS')
+
+App_Version = "2.0.0.1"
+Domain_Names = []
+Record_Names = []
+Update_Interval = 0
+Exception_Interval = 0
+TTL_Interval = 0
+Sleep_Time_Initial_Autherisation = 0
+Sleep_Time_Inter_Domain = 0
+
+#====================================================================================================
+# Set up logging
+#====================================================================================================
+log.setLevel(logging.DEBUG)
+
+# Setup logging to a file
+logfile = logging.handlers.RotatingFileHandler(Log_File_Name, maxBytes=100000, backupCount=5)
+logfile.setLevel(logging.DEBUG)
+
+# Setup logging to the console
+logcons = logging.StreamHandler()
+logcons.setLevel(logging.DEBUG)
+
+# Define the format of the log information
+logform = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s') #  %(name)s
+logfile.setFormatter(logform)
+logcons.setFormatter(logform)
+log.addHandler(logfile)
+log.addHandler(logcons)
 
 #====================================================================================================
 # AWS Services functions
@@ -157,36 +197,19 @@ def Get_External_IP_From_AWS():
             return
 
         return address
-    return
 
 #====================================================================================================
-# Main function
+# IP Services - Get the external IP address with error checking and return it.
 #====================================================================================================
-def main():
-#====================================================================================================
-# Set up logging
-#====================================================================================================
-    log.setLevel(logging.DEBUG)
+def Read_Configuration():
+    global Domain_Names
+    global Record_Names
+    global Update_Interval
+    global Exception_Interval
+    global TTL_Interval
+    global Sleep_Time_Initial_Autherisation
+    global Sleep_Time_Inter_Domain
 
-    #logfile = logging.FileHandler(Log_File_Name)
-    logfile = logging.handlers.RotatingFileHandler(Log_File_Name, maxBytes=100000, backupCount=5)
-    logfile.setLevel(logging.DEBUG)
-    
-    logcons = logging.StreamHandler()
-    logcons.setLevel(logging.DEBUG)
-
-    logform = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s') #  %(name)s
-    logfile.setFormatter(logform)
-    logcons.setFormatter(logform)
-
-    log.addHandler(logfile)
-    log.addHandler(logcons)
-    
-    log.info("Program started.")
-
-#====================================================================================================
-# Read the configuration file
-#====================================================================================================
     config = configparser.ConfigParser()
     config.read(Config_File_Name)
 
@@ -247,13 +270,46 @@ def main():
     else:
         TTL_Interval = 3600
 
+    if config.has_option('Defaults', 'Sleep_Time_Initial_Autherisation'):
+        Sleep_Time_Initial_Autherisation = int(config['Defaults']['Sleep_Time_Initial_Autherisation'])
+        if Sleep_Time_Initial_Autherisation < 1: Sleep_Time_Initial_Autherisation = 1
+    else:
+        Sleep_Time_Initial_Autherisation = 1
+
+    if config.has_option('Defaults', 'Sleep_Time_Inter_Domain'):
+        Sleep_Time_Initial_Autherisation = int(config['Defaults']['Sleep_Time_Inter_Domain'])
+        if Sleep_Time_Inter_Domain < 1: Sleep_Time_Inter_Domain = 1
+    else:
+        Sleep_Time_Inter_Domain = 1
+
     log.debug("Domains and records loaded: {} {}".format(Domain_Names, Record_Names))
     log.debug("Interval loaded: {}".format(Update_Interval))
     log.debug("Exception interval loaded: {}".format(Exception_Interval))
     log.debug("TTL: {}".format(TTL_Interval))
+    log.debug("Sleep_Time_Initial_Autherisation: {}".format(Sleep_Time_Initial_Autherisation))
+    log.debug("Sleep_Time_Inter_Domain: {}".format(Sleep_Time_Inter_Domain))
+    return
 
 #====================================================================================================
-# Try to set up the session object from the credientials file
+# Main function
+#====================================================================================================
+def main():
+    log.info("Program starting. App version is {}, docker container version is {}".format(App_Version, Docker_Version))
+
+#====================================================================================================
+# Read the configuration file
+#====================================================================================================
+    if not os.path.isfile(Config_File_Name):
+        log.critical("Configuration file {} not found.".format(Config_File_Name))
+        return
+
+    Config_File_Moddate = os.stat(Config_File_Name)[8]
+    Config_File_Previous_Timestamp = time.ctime(Config_File_Moddate)
+
+    Read_Configuration()
+
+#====================================================================================================
+# Try to set up the AWS session object from the credientials file or environment variables
 #====================================================================================================
     try:
         Route53_Session = boto3.Session(profile_name='route53_user')
@@ -273,7 +329,7 @@ def main():
 #====================================================================================================
 # Initialise a false last IP address to force an update check
 #====================================================================================================
-    time.sleep(5)
+    time.sleep(Sleep_Time_Initial_Autherisation)
     Last_External_Address = "0.0.0.0"
 
 #====================================================================================================
@@ -283,9 +339,10 @@ def main():
         while True:
     # Find our current external IP address
             Issue_Updating = False
+
             External_Address = Get_External_IP_From_AWS()
             if External_Address == None:
-                log.error("Couldn't retrieve the external IP address")
+                log.error("Could not determine the external IP address")
                 Issue_Updating = True
             else:
                 log.info("External IP address: {}".format(External_Address))
@@ -296,7 +353,7 @@ def main():
             
     # Loop round the list of domain names and records we are montioring
                 for Domain_Index in range(0, len(Domain_Names)):
-                    time.sleep(5)
+                    time.sleep(Sleep_Time_Inter_Domain)
                     Domain_Name_dot = Domain_Names[Domain_Index].lower() + '.'
                     Record_Name_dot = Record_Names[Domain_Index].lower() + '.'
                     log.debug("Checking domain {} for record {}".format(Domain_Name_dot, Record_Name_dot))
@@ -333,11 +390,29 @@ def main():
                                         log.error("DNS update request was note accepted")
             
             if Issue_Updating:
-                log.warning("Sleeping for {} seconds".format(Exception_Interval))
+                log.warning("Sleeping for the exception interval {} seconds after an issue updating.".format(Exception_Interval))
                 time.sleep(Exception_Interval)        
             else:
                 log.info("Sleeping for {} seconds".format(Update_Interval))
+    # If the environment variable for healthcheck was set, touch the test file
+                if Heartbeat_Enabled & os.path.isfile(Config_File_Name):
+                    pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
+                    log.debug("Touching healthcheck file {}".format(Healthcheck_Heartbeat_File_Name))
+    # Go to sleep for the duration
                 time.sleep(Update_Interval)        
+
+    # Check if the config file has been updated. If it has, re-read it.
+            if not os.path.isfile(Config_File_Name):
+                log.critical("Configuration file {} no longer not found.".format(Config_File_Name))
+            else:
+                Config_File_Moddate = os.stat(Config_File_Name)[8]
+                Config_File_Current_Timestamp = time.ctime(Config_File_Moddate)
+
+                if Config_File_Previous_Timestamp != Config_File_Current_Timestamp:
+                    log.info("Config file {} has been updated, re-reading.".format(Config_File_Name))
+                    Read_Configuration()
+                    Config_File_Previous_Timestamp = Config_File_Current_Timestamp
+
     except (KeyboardInterrupt):
         log.warning("User terminated program")
         return
