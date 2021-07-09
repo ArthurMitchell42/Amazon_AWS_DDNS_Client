@@ -86,8 +86,7 @@ Exception_Interval = 300
 ; Log_Level options are: Debug Info Warning Error Critical
 Log_Level_Logfile = Info 
 Log_Level_Console = Warning 
-TTL = 3211
-TTL = 3210
+TTL = 3600
 Sleep_Time_Initial_Autherisation = 1
 Sleep_Time_Inter_Domain = 1
 </tt></pre>
