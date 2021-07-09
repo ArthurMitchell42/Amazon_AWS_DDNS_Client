@@ -172,6 +172,12 @@ The parameters for the configuration file are as follows.
 <td>1</td>
 <td>The time to pause between consucutive domain interrogations.</td>
 </tr>
+<tr>
+<td align="left">Sleep_Time_Initial_Autherisation</td>
+<td>Optional</td>
+<td>1</td>
+<td>The time to pause between autherisation and domain interrogations.</td>
+</tr>  
 </tbody></table>
 </p>
 <p>The example file above shows two main options for configuring an address. The first updates a specific A record in the hosted domain so that <b><i>home.yourdomain.com</b></i> is given the external IP address. This is the most simple case and you must create an A-Record with the name <b><i>home.yourdomain.com</b></i> in AWS before it can be updated.</p>
