@@ -22,6 +22,17 @@ The Amazon AWS DDNS Client
   </ol>
 </td>
 </tr>
+  <tr>
+<td align="left">03/06/2022</td>
+<td align="left">2.0.0.3</td>
+<td align="left">
+  <ol>
+<li>Fixed potential crash on connectivity issue when obtailing the external IP address</li>
+<li>Added try catch to reading the config file</li>
+<li>Improved the docker health check to account for the update duration information</li>
+<li>Added Webhooks for alerting on errors updating and for healthy update</li>
+  </ol>
+</tr>
 </tbody></table>
 
 # Credentials file
@@ -89,6 +100,8 @@ Log_Level_Console = Warning
 TTL = 3600
 Sleep_Time_Initial_Autherisation = 1
 Sleep_Time_Inter_Domain = 1
+WebHook_Alive = 'HTTP://x.x.x.x/aaaaaaaaa'
+WebHook_Alert = 'HTTP://x.x.x.x/aaaaaaaaa'
 </tt></pre>
 
 <h2>The Configuration File Parameters</h2>
@@ -177,6 +190,19 @@ The parameters for the configuration file are as follows.
 <td>1</td>
 <td>The time to pause between autherisation and domain interrogations.</td>
 </tr>  
+<tr>
+<td align="left">WebHook_Alive </td>
+<td>Optional</td>
+<td>-</td>
+<td>Called when the update of all records was successful.</td>
+</tr>
+<tr>
+<td align="left">WebHook_Alert </td>
+<td>Optional</td>
+<td>-</td>
+<td>Called when the update of any record was unsuccessful.</td>
+</tr>
+ 
 </tbody></table>
 </p>
 <p>The example file above shows two main options for configuring an address. The first updates a specific A record in the hosted domain so that <b><i>home.yourdomain.com</b></i> is given the external IP address. This is the most simple case and you must create an A-Record with the name <b><i>home.yourdomain.com</b></i> in AWS before it can be updated.</p>
