@@ -12,6 +12,8 @@ import boto3
 import time
 import os                   # For enviromnent variables
 import pathlib              # For file touching
+# For testing webhooks
+import json
 
 #====================================================================================================
 # Global definitions and environment variables
@@ -22,12 +24,18 @@ except KeyError:
     print("Environment variable 'AWS_CONFIG_PATH' not found. Defaulting to CWD.")
     File_Paths = ""
 
+Healthcheck_Interval_File_Name = None
+Healthcheck_Heartbeat_File_Name = None
 try:
     Healthcheck_Heartbeat_File_Name = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
     Heartbeat_Enabled = True
     pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
+    try:
+        Healthcheck_Interval_File_Name = os.environ['HEALTHCHECK_INTERVAL_FILE']
+    except KeyError: 
+        Healthcheck_Interval_File_Name = None
+        Heartbeat_Enabled = False
 except KeyError: 
-    Healthcheck_Heartbeat_File_Name = ""
     Heartbeat_Enabled = False
 
 Docker_Version = os.environ.get('AWS_DOCKER_VERSION', 'None')
@@ -36,7 +44,7 @@ Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
 Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
 log = logging.getLogger('AWS_Route53_DDNS')
 
-App_Version = "2.0.0.1"
+App_Version = "2.0.0.3"
 Domain_Names = []
 Record_Names = []
 Update_Interval = 0
@@ -44,6 +52,43 @@ Exception_Interval = 0
 TTL_Interval = 0
 Sleep_Time_Initial_Autherisation = 0
 Sleep_Time_Inter_Domain = 0
+WebHook_Alive = None
+WebHook_Alert = None
+
+#====================================================================================================
+# Call a webhook
+#====================================================================================================
+def Call_Webhook( Hook ):
+    if not Hook:
+        log.info("Webhook is not set.")
+        return
+
+    log.debug("Calling webhook {}".format(Hook))
+
+    try:
+        res = urlopen(Hook)
+    except URLError as e:
+        if hasattr(e, 'reason'):
+            log.warning("Failed to call webhook. Reason: %s", e.reason)
+        elif hasattr(e, 'code'):
+            log.warning("The webhook server could't fulfill the request. Error code: %s", e.code)
+        return
+    else:
+        resp = res.getcode()
+        if resp != 200:
+            log.warning("The webhook call returned code: ", resp)
+
+        page = res.read()
+        data_json = json.loads(page)
+        
+        if ("ok" in data_json):
+            if (data_json["ok"] != True):
+                if ("msg" in data_json):
+                    jmsg = data_json["msg"]
+                else:
+                    jmsg = "none"
+                log.warning("The webhook returned an 'ok' element as not True with the message '{}'".format(jmsg))
+    return True
 
 #====================================================================================================
 # Set up logging
@@ -183,9 +228,15 @@ def Get_External_IP_From_AWS():
         res = urlopen(req)
     except URLError as e:
         if hasattr(e, 'reason'):
-            log.warning("Failed to reach AWS IP checking page server. Reason: %s", e.reason)
+            log.warning("Failed to reach AWS IP checking server. Reason: %s", e.reason)
         elif hasattr(e, 'code'):
-            log.warning("The server could't fulfill the request. Error code: %s", e.code)
+            log.warning("The AWS IP checking server couldn't fulfil the request. Error code: %s", e.code)
+        return
+    except Exception as e:
+        if hasattr(e, 'reason'):
+            log.warning("Failed to reach AWS IP checking server. Reason: %s", e.reason)
+        elif hasattr(e, 'code'):
+            log.warning("The AWS IP checking server couldn't fulfil the request. Error code: %s", e.code)
         return
     else:
         page = res.read()
@@ -199,7 +250,31 @@ def Get_External_IP_From_AWS():
         return address
 
 #====================================================================================================
-# IP Services - Get the external IP address with error checking and return it.
+# If health checking is enabled, update the file that conveys the update interval to the 
+# shell script.
+#====================================================================================================
+def Write_Interval(Update_Interval):
+    global Healthcheck_Interval_File_Name
+    global Heartbeat_Enabled
+
+    if not Heartbeat_Enabled:
+        return
+
+    Health_Interval = Update_Interval + int( float(Update_Interval) / 20.0)        
+
+    if Healthcheck_Interval_File_Name:
+        try:
+            open(Healthcheck_Interval_File_Name, 'w')
+            with open(Healthcheck_Interval_File_Name, 'w') as f:
+                f.write(str(Health_Interval))
+        except Exception as e:
+            log.error("Can't write to update interval file: {}".format(Healthcheck_Interval_File_Name))
+
+    log.debug("Updating health check interval to: {} seconds".format(Health_Interval))
+    return
+
+#====================================================================================================
+# Read the app configuration from the .INI file.
 #====================================================================================================
 def Read_Configuration():
     global Domain_Names
@@ -209,9 +284,14 @@ def Read_Configuration():
     global TTL_Interval
     global Sleep_Time_Initial_Autherisation
     global Sleep_Time_Inter_Domain
+    global WebHook_Alert
+    global WebHook_Alive
 
     config = configparser.ConfigParser()
-    config.read(Config_File_Name)
+    try:
+        config.read(Config_File_Name)
+    except Exception as err:
+        log.critical("Exception reading configuration file {}".format(err))
 
 # Check that the 'Domains' section is present in the config file:
     if not config.has_section('Domains'):
@@ -282,12 +362,28 @@ def Read_Configuration():
     else:
         Sleep_Time_Inter_Domain = 1
 
+    if config.has_option('Defaults', 'Webhook_Alive'):
+        WebHook_Alive = config['Defaults']['Webhook_Alive']
+        if (WebHook_Alive[0] == "'" and WebHook_Alive[-1] == "'") or \
+           (WebHook_Alive[0] == '"' and WebHook_Alive[-1] == '"'):
+            WebHook_Alive = WebHook_Alive[1:-1]
+
+    if config.has_option('Defaults', 'Webhook_Alert'):
+        WebHook_Alert = config['Defaults']['Webhook_Alert']
+        if (WebHook_Alert[0] == "'" and WebHook_Alert[-1] == "'") or \
+           (WebHook_Alert[0] == '"' and WebHook_Alert[-1] == '"'):
+            WebHook_Alert = WebHook_Alert[1:-1]
+
+    Write_Interval(Update_Interval)
+
     log.debug("Domains and records loaded: {} {}".format(Domain_Names, Record_Names))
     log.debug("Interval loaded: {}".format(Update_Interval))
     log.debug("Exception interval loaded: {}".format(Exception_Interval))
     log.debug("TTL: {}".format(TTL_Interval))
     log.debug("Sleep_Time_Initial_Autherisation: {}".format(Sleep_Time_Initial_Autherisation))
-    log.debug("Sleep_Time_Inter_Domain: {}".format(Sleep_Time_Inter_Domain))
+    log.debug("Webhook_Alive: {}".format(WebHook_Alive))
+    log.debug("Webhook_Alert: {}".format(WebHook_Alert))
+    
     return
 
 #====================================================================================================
@@ -390,9 +486,11 @@ def main():
                                         log.error("DNS update request was note accepted")
             
             if Issue_Updating:
+                Call_Webhook( WebHook_Alert + "UpdateIssue" )
                 log.warning("Sleeping for the exception interval {} seconds after an issue updating.".format(Exception_Interval))
                 time.sleep(Exception_Interval)        
             else:
+                Call_Webhook( WebHook_Alive )
                 log.info("Sleeping for {} seconds".format(Update_Interval))
     # If the environment variable for healthcheck was set, touch the test file
                 if Heartbeat_Enabled & os.path.isfile(Config_File_Name):
@@ -414,6 +512,7 @@ def main():
                     Config_File_Previous_Timestamp = Config_File_Current_Timestamp
 
     except (KeyboardInterrupt):
+        Call_Webhook( WebHook_Alert + "UserTerm" )
         log.warning("User terminated program")
         return
 
