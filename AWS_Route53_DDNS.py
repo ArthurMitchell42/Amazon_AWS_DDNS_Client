@@ -10,10 +10,10 @@ from urllib.error import URLError
 import botocore
 import boto3
 import time
-import os                   # For enviromnent variables
-import pathlib              # For file touching
-# For testing webhooks
-import json
+import os          # For enviromnent variables
+import pathlib     # For file touching
+import json        # For webhooks
+import re          # From the text cleaning functions
 
 #====================================================================================================
 # Global definitions and environment variables
@@ -23,6 +23,10 @@ try:
 except KeyError: 
     print("Environment variable 'AWS_CONFIG_PATH' not found. Defaulting to CWD.")
     File_Paths = ""
+
+if( not os.path.exists(File_Paths) ):
+    print("Path {} does not exist".format(File_Paths))
+    exit(1)
 
 Healthcheck_Interval_File_Name = None
 Healthcheck_Heartbeat_File_Name = None
@@ -44,7 +48,7 @@ Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
 Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
 log = logging.getLogger('AWS_Route53_DDNS')
 
-App_Version = "2.0.0.3"
+App_Version = "2.1.0.0"
 Domain_Names = []
 Record_Names = []
 Update_Interval = 0
@@ -54,6 +58,9 @@ Sleep_Time_Initial_Autherisation = 0
 Sleep_Time_Inter_Domain = 0
 WebHook_Alive = None
 WebHook_Alert = None
+AWS_Access_Key_ID = None 
+AWS_Secret_Access_Key = None
+AWS_Credential_Profile=None
 
 #====================================================================================================
 # Call a webhook
@@ -286,6 +293,9 @@ def Read_Configuration():
     global Sleep_Time_Inter_Domain
     global WebHook_Alert
     global WebHook_Alive
+    global AWS_Access_Key_ID 
+    global AWS_Secret_Access_Key
+    global AWS_Credential_Profile
 
     config = configparser.ConfigParser()
     try:
@@ -374,6 +384,38 @@ def Read_Configuration():
            (WebHook_Alert[0] == '"' and WebHook_Alert[-1] == '"'):
             WebHook_Alert = WebHook_Alert[1:-1]
 
+#====================================================================================================
+# See if the config file contains the AWS access keys
+#====================================================================================================
+    if config.has_option('Credentials', 'aws_access_key_id') and config.has_option('Credentials', 'aws_secret_access_key'):
+        AWS_Access_Key_ID = config['Credentials']['AWS_Access_Key_ID']
+        AWS_Secret_Access_Key = config['Credentials']['AWS_Secret_Access_Key']
+
+        if (AWS_Access_Key_ID[0] == "'" and AWS_Access_Key_ID[-1] == "'") or \
+           (AWS_Access_Key_ID[0] == '"' and AWS_Access_Key_ID[-1] == '"'):
+            AWS_Access_Key_ID = AWS_Access_Key_ID[1:-1]
+ 
+        if (AWS_Secret_Access_Key[0] == "'" and AWS_Secret_Access_Key[-1] == "'") or \
+           (AWS_Secret_Access_Key[0] == '"' and AWS_Secret_Access_Key[-1] == '"'):
+            AWS_Secret_Access_Key = AWS_Secret_Access_Key[1:-1]
+
+#====================================================================================================
+# See if the config file contains the AWS credential profile
+#====================================================================================================
+    if config.has_option('Credentials', 'AWS_Credential_Profile'):
+        AWS_Credential_Profile = config['Credentials']['AWS_Credential_Profile']
+        if (AWS_Credential_Profile[0] == "'" and AWS_Credential_Profile[-1] == "'") or \
+           (AWS_Credential_Profile[0] == '"' and AWS_Credential_Profile[-1] == '"'):
+            AWS_Credential_Profile = AWS_Credential_Profile[1:-1]
+    else:
+        try:
+            AWS_Credential_Profile = os.environ['AWS_PROFILE']
+        except KeyError: 
+            AWS_Credential_Profile = 'route53_user'
+
+#====================================================================================================
+# Write the logged update interval to the file used in the health check
+#====================================================================================================
     Write_Interval(Update_Interval)
 
     log.debug("Domains and records loaded: {} {}".format(Domain_Names, Record_Names))
@@ -383,13 +425,17 @@ def Read_Configuration():
     log.debug("Sleep_Time_Initial_Autherisation: {}".format(Sleep_Time_Initial_Autherisation))
     log.debug("Webhook_Alive: {}".format(WebHook_Alive))
     log.debug("Webhook_Alert: {}".format(WebHook_Alert))
-    
+    if( AWS_Access_Key_ID and AWS_Secret_Access_Key ):
+        log.debug("AWS Access keys set from config file")
     return
 
 #====================================================================================================
 # Main function
 #====================================================================================================
 def main():
+    global AWS_Access_Key_ID 
+    global AWS_Secret_Access_Key
+
     log.info("Program starting. App version is {}, docker container version is {}".format(App_Version, Docker_Version))
 
 #====================================================================================================
@@ -406,21 +452,126 @@ def main():
 
 #====================================================================================================
 # Try to set up the AWS session object from the credientials file or environment variables
+#   1. Check if credentials were found in the config file
+#   2. Check if the credentials were set as environment variables
+#   3. Check for the _FILE environment variables and load from them if present 
+#   4. Try to get credentials from the default credentials file
 #====================================================================================================
-    try:
-        Route53_Session = boto3.Session(profile_name='route53_user')
-    except botocore.exceptions.ProfileNotFound :
-        log.debug("Profile 'route53_user' not found in credentials file. Trying default credentials.")
+#========================================
+# Option 1
+#========================================
+    if( AWS_Access_Key_ID and AWS_Secret_Access_Key ):
         try:
-            Route53_Session = boto3.Session(profile_name='default')
-        except botocore.exceptions.ProfileNotFound :
-            log.debug("Default credential profile not found in credentials file. Falling back to environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.")
-            Route53_Session = boto3.Session()
+            Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID, aws_secret_access_key=AWS_Secret_Access_Key )
+            log.debug("Credentials from config file created a session.")
+        except Exception as error:
+            log.info("Credentials from config file failed to create a session. %s", error)
+            exit(1)
     else:
-        log.debug("Profile route53_user found in credentials file.")
+#========================================
+# Option 2
+#========================================
+        Found_ID_Env_Var = False
+        Found_Secret_Env_Var = False
+
+        try:
+            AWS_Access_Key_ID = os.environ['AWS_ACCESS_KEY_ID']
+            Found_ID_Env_Var = True
+        except KeyError: 
+            Found_ID_Env_Var = False
+
+        try:
+            AWS_Secret_Access_Key = os.environ['AWS_SECRET_ACCESS_KEY']
+            Found_Secret_Env_Var = True
+        except KeyError: 
+            Found_Secret_Env_Var = False
+
+        if Found_ID_Env_Var and Found_Secret_Env_Var:
+            try:
+                Route53_Session = boto3.Session()
+                log.debug("Credentials from environment variables successfully created a session.")
+            except Exception :
+                log.info("Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY found but didn't create a session successfully.")
+                exit(1)
+        else:
+            log.debug("Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY not found.")
+#========================================
+# Option 3
+#========================================
+            Found_ID_Env_Var = False
+            Found_Secret_Env_Var = False
+            try:
+                AWS_Access_Key_ID_File_Name = os.environ['AWS_ACCESS_KEY_ID_FILE']
+                Found_ID_Env_Var = True
+            except KeyError: 
+                Found_ID_Env_Var = False
+
+            try:
+                AWS_Secret_Access_Key_File_Name = os.environ['AWS_SECRET_ACCESS_KEY_FILE']
+                Found_Secret_Env_Var = True
+            except KeyError: 
+                Found_Secret_Env_Var = False
+
+            if Found_ID_Env_Var and Found_Secret_Env_Var:
+                try:
+                    with open(AWS_Access_Key_ID_File_Name, 'r') as f:
+                        AWS_Access_Key_ID = f.readline()
+                except Exception as e:
+                    log.error("Can't read AWS_ACCESS_KEY_ID_FILE file: {}".format(AWS_Access_Key_ID_File_Name))
+                    exit(1)
+                try:
+                    with open(AWS_Secret_Access_Key_File_Name, 'r') as f:
+                        AWS_Secret_Access_Key = f.readline()
+                except Exception as e:
+                    log.error("Can't read AWS_SECRET_ACCESS_KEY_FILE file: {}".format(AWS_Secret_Access_Key_File_Name))
+                    exit(1)
+
+                Cleaning_Pattern = r"[ \n\r'\"]"
+                AWS_Access_Key_ID = re.sub( Cleaning_Pattern, "", AWS_Access_Key_ID )
+                AWS_Secret_Access_Key = re.sub( Cleaning_Pattern, "", AWS_Secret_Access_Key )
+
+                log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE in use, keys loaded")
+
+                try:
+                    Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID , aws_secret_access_key=AWS_Secret_Access_Key )
+                    log.debug("Credentials from _FILE environment variables created a session successfully.")
+                except Exception :
+                    log.info("Credentials from file environment variables failed to create a session.")
+            else:
+                log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE not found.")
+ 
+#========================================
+# Option 4
+#========================================
+                try:
+                    Route53_Session = boto3.Session(profile_name=AWS_Credential_Profile)
+                    log.debug("Profile {} found in credentials file.".format(AWS_Credential_Profile))
+                except botocore.exceptions.ProfileNotFound :
+                    log.debug("Profile {} not found in credentials file. Trying the default profile.".format(AWS_Credential_Profile))
+                    try:
+                        Route53_Session = boto3.Session(profile_name='default')
+                        log.debug("Profile default found in credentials file.")
+                    except botocore.exceptions.ProfileNotFound :
+                        log.debug("Default profile not found in credentials file.")
+                        log.critical("No valid AWS credentials were found. Please check the documentation for how to provide them.")
+                        exit(1)
 
 # Create the Route53 client object
     Route53_Client = Route53_Session.client( 'route53' )
+
+# Test the credentials by listing all the hosted zones for a user
+    try:
+        zones = Route53_Client.list_hosted_zones_by_name()
+        log.debug("Testing credentials: Successfully listed zones.")
+    except botocore.exceptions.ClientError as error:
+        log.error("Testing credentials: Could not list zones: %s", error)
+        exit(1)
+    except botocore.exceptions.NoCredentialsError as error:
+        log.fatal("Testing credentials: Could not list zones with the loaded credentials: %s", error)
+        exit(1)
+    except botocore.exceptions.HTTPClientError as error:
+        log.fatal("Testing credentials: Could not list zones with the loaded credentials: %s", error)
+        exit(1)
 
 #====================================================================================================
 # Initialise a false last IP address to force an update check
