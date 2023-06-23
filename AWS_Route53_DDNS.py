@@ -22,7 +22,7 @@ try:
     File_Paths = os.environ['AWS_CONFIG_PATH']
 except KeyError: 
     print("Environment variable 'AWS_CONFIG_PATH' not found. Defaulting to CWD.")
-    File_Paths = ""
+    File_Paths = "./"
 
 if( not os.path.exists(File_Paths) ):
     print("Path {} does not exist".format(File_Paths))
@@ -48,7 +48,7 @@ Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
 Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
 log = logging.getLogger('AWS_Route53_DDNS')
 
-App_Version = "2.1.0.0"
+App_Version = "2.2.0.0"
 Domain_Names = []
 Record_Names = []
 Update_Interval = 0
@@ -129,6 +129,9 @@ def Check_DNS_Response(Route53_Client, Hosted_Zone_Id, Record_Name):
             )
     except Route53_Client.exceptions.InvalidInput as e:
         log.error("Error finding {} in zone {}. Error: {}".format(Record_Name, Hosted_Zone_Id, e))
+        return
+    except Route53_Client.exceptions.ClientError as e:
+        log.error("Can't get DNS information while calling test_dns_answer. This is most likely caused by an AWS service outage. Error: {}".format(e))
         return
 
     if resp['ResponseCode'] != 'NOERROR': 
