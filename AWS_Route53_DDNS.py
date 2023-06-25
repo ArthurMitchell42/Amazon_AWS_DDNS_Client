@@ -14,7 +14,7 @@ import json        # For webhooks
 import re          # From the text cleaning functions
 
 from urllib.request import Request, urlopen
-from urllib.error import URLError
+from urllib.error   import URLError
 
 #====================================================================================================
 # Setup file paths & names from environment variables
@@ -30,10 +30,9 @@ if( not os.path.exists(File_Paths) ):
 Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
 
 #====================================================================================================
-# Set up logging objects
+# Set up logging objects and logging to a file and the console
 #====================================================================================================
 log = logging.getLogger('__name__')
-# Setup logging to a file and the console
 logfile = logging.handlers.RotatingFileHandler(Log_File_Name, maxBytes=100000, backupCount=5)
 logcons = logging.StreamHandler()
 
