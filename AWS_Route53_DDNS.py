@@ -5,8 +5,6 @@ import logging
 import logging.handlers
 import configparser
 import ipaddress
-from urllib.request import Request, urlopen
-from urllib.error import URLError
 import botocore
 import boto3
 import time
@@ -15,39 +13,12 @@ import pathlib     # For file touching
 import json        # For webhooks
 import re          # From the text cleaning functions
 
+from urllib.request import Request, urlopen
+from urllib.error import URLError
+
 #====================================================================================================
 # Global definitions and environment variables
 #====================================================================================================
-try:
-    File_Paths = os.environ['AWS_CONFIG_PATH']
-except KeyError: 
-    print("Environment variable 'AWS_CONFIG_PATH' not found. Defaulting to CWD.")
-    File_Paths = "./"
-
-if( not os.path.exists(File_Paths) ):
-    print("Path {} does not exist".format(File_Paths))
-    exit(1)
-
-Healthcheck_Interval_File_Name = None
-Healthcheck_Heartbeat_File_Name = None
-try:
-    Healthcheck_Heartbeat_File_Name = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
-    Heartbeat_Enabled = True
-    pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
-    try:
-        Healthcheck_Interval_File_Name = os.environ['HEALTHCHECK_INTERVAL_FILE']
-    except KeyError: 
-        Healthcheck_Interval_File_Name = None
-        Heartbeat_Enabled = False
-except KeyError: 
-    Heartbeat_Enabled = False
-
-Docker_Version = os.environ.get('AWS_DOCKER_VERSION', 'None')
-
-Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
-Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
-log = logging.getLogger('AWS_Route53_DDNS')
-
 App_Version = "2.2.0.0"
 Domain_Names = []
 Record_Names = []
@@ -61,13 +32,52 @@ WebHook_Alert = None
 AWS_Access_Key_ID = None 
 AWS_Secret_Access_Key = None
 AWS_Credential_Profile=None
+Healthcheck_Interval_File_Name = None
+Healthcheck_Heartbeat_File_Name = None
+Heartbeat_Enabled = False
+
+#====================================================================================================
+# Setup file paths & names environment variables
+#====================================================================================================
+File_Paths = os.environ.get('AWS_CONFIG_PATH', "./")
+if( File_Paths[-1] != '/' ):
+    File_Paths = File_Paths + '/'
+
+if( not os.path.exists(File_Paths) ):
+    print("Path {} does not exist".format(File_Paths))
+    exit(1)
+
+Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
+Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
+
+#====================================================================================================
+# Set up logging
+#====================================================================================================
+log = logging.getLogger('__name__')
+
+log.setLevel(logging.DEBUG)
+
+# Setup logging to a file
+logfile = logging.handlers.RotatingFileHandler(Log_File_Name, maxBytes=100000, backupCount=5)
+logfile.setLevel(logging.DEBUG)
+
+# Setup logging to the console
+logcons = logging.StreamHandler()
+logcons.setLevel(logging.DEBUG)
+
+# Define the format of the log information
+logform = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s') #  %(name)s
+logfile.setFormatter(logform)
+logcons.setFormatter(logform)
+log.addHandler(logfile)
+log.addHandler(logcons)
 
 #====================================================================================================
 # Call a webhook
 #====================================================================================================
 def Call_Webhook( Hook ):
     if not Hook:
-        log.info("Webhook is not set.")
+        log.debug("Webhook is not set.")
         return
 
     log.debug("Calling webhook {}".format(Hook))
@@ -96,26 +106,6 @@ def Call_Webhook( Hook ):
                     jmsg = "none"
                 log.warning("The webhook returned an 'ok' element as not True with the message '{}'".format(jmsg))
     return True
-
-#====================================================================================================
-# Set up logging
-#====================================================================================================
-log.setLevel(logging.DEBUG)
-
-# Setup logging to a file
-logfile = logging.handlers.RotatingFileHandler(Log_File_Name, maxBytes=100000, backupCount=5)
-logfile.setLevel(logging.DEBUG)
-
-# Setup logging to the console
-logcons = logging.StreamHandler()
-logcons.setLevel(logging.DEBUG)
-
-# Define the format of the log information
-logform = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s') #  %(name)s
-logfile.setFormatter(logform)
-logcons.setFormatter(logform)
-log.addHandler(logfile)
-log.addHandler(logcons)
 
 #====================================================================================================
 # AWS Services functions
@@ -157,13 +147,17 @@ def Check_DNS_Response(Route53_Client, Hosted_Zone_Id, Record_Name):
 #====================================================================================================
 def Get_DNS_Record_IP(Route53_Client, Zone_ID, Record_Name):
     # List all the record sets for a zone
-    resp = Route53_Client.list_resource_record_sets( 
-        HostedZoneId=Zone_ID,  
-        StartRecordName=Record_Name,
-        StartRecordType='A',
-        MaxItems='100'
-        )
-
+    try:
+        resp = Route53_Client.list_resource_record_sets( 
+            HostedZoneId=Zone_ID,  
+            StartRecordName=Record_Name,
+            StartRecordType='A',
+            MaxItems='100'
+            )
+    except Exception as e:
+        log.error("Can't list_resource_record_sets. Error: {}".format(e))
+        return
+    
     for i in resp['ResourceRecordSets']:
         if i['Name'] == Record_Name:
             addr_str = i['ResourceRecords'][0]['Value']
@@ -220,10 +214,18 @@ def Update_DNS_Record_IP(Route53_Client, Hosted_Zone_Id, Record_Name, New_IP, TT
         }
 
     log.info("Updating {} {} with new address {}".format(Hosted_Zone_Id, Record_Name, str(New_IP)))
-    change = Route53_Client.change_resource_record_sets( 
-        ChangeBatch  = ChangeBatch_Dict,
-        HostedZoneId = Hosted_Zone_Id,        
-        )
+
+    try:
+        change = Route53_Client.change_resource_record_sets( 
+            ChangeBatch  = ChangeBatch_Dict,
+            HostedZoneId = Hosted_Zone_Id,        
+            )
+    except Exception as e:
+        if hasattr(e, 'reason'):
+            log.warning("Failed to update {} {} with new address {}. Reason: {}".format(Hosted_Zone_Id, Record_Name, str(New_IP), e.reason))
+        elif hasattr(e, 'code'):
+            log.warning("Failed to update {} {} with new address {}. Error code: {}".format(Hosted_Zone_Id, Record_Name, str(New_IP), e.code))
+        return
     
     if int(change['ResponseMetadata']['HTTPStatusCode']) == 200: return True
     return False
@@ -265,10 +267,6 @@ def Get_External_IP_From_AWS():
 #====================================================================================================
 def Write_Interval(Update_Interval):
     global Healthcheck_Interval_File_Name
-    global Heartbeat_Enabled
-
-    if not Heartbeat_Enabled:
-        return
 
     Health_Interval = Update_Interval + int( float(Update_Interval) / 20.0)        
 
@@ -299,6 +297,8 @@ def Read_Configuration():
     global AWS_Access_Key_ID 
     global AWS_Secret_Access_Key
     global AWS_Credential_Profile
+    global Healthcheck_Interval_File_Name
+    global Heartbeat_Enabled
 
     config = configparser.ConfigParser()
     try:
@@ -411,15 +411,13 @@ def Read_Configuration():
            (AWS_Credential_Profile[0] == '"' and AWS_Credential_Profile[-1] == '"'):
             AWS_Credential_Profile = AWS_Credential_Profile[1:-1]
     else:
-        try:
-            AWS_Credential_Profile = os.environ['AWS_PROFILE']
-        except KeyError: 
-            AWS_Credential_Profile = 'route53_user'
+        AWS_Credential_Profile = os.environ.get('AWS_PROFILE','route53_user')
 
 #====================================================================================================
 # Write the logged update interval to the file used in the health check
 #====================================================================================================
-    Write_Interval(Update_Interval)
+    if Heartbeat_Enabled:
+        Write_Interval(Update_Interval)
 
     log.debug("Domains and records loaded: {} {}".format(Domain_Names, Record_Names))
     log.debug("Interval loaded: {}".format(Update_Interval))
@@ -433,33 +431,15 @@ def Read_Configuration():
     return
 
 #====================================================================================================
-# Main function
-#====================================================================================================
-def main():
-    global AWS_Access_Key_ID 
-    global AWS_Secret_Access_Key
-
-    log.info("Program starting. App version is {}, docker container version is {}".format(App_Version, Docker_Version))
-
-#====================================================================================================
-# Read the configuration file
-#====================================================================================================
-    if not os.path.isfile(Config_File_Name):
-        log.critical("Configuration file {} not found.".format(Config_File_Name))
-        return
-
-    Config_File_Moddate = os.stat(Config_File_Name)[8]
-    Config_File_Previous_Timestamp = time.ctime(Config_File_Moddate)
-
-    Read_Configuration()
-
-#====================================================================================================
 # Try to set up the AWS session object from the credientials file or environment variables
 #   1. Check if credentials were found in the config file
 #   2. Check if the credentials were set as environment variables
 #   3. Check for the _FILE environment variables and load from them if present 
 #   4. Try to get credentials from the default credentials file
 #====================================================================================================
+def Try_Credential_Flow():
+    global AWS_Access_Key_ID 
+    global AWS_Secret_Access_Key
 #========================================
 # Option 1
 #========================================
@@ -468,7 +448,7 @@ def main():
             Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID, aws_secret_access_key=AWS_Secret_Access_Key )
             log.debug("Credentials from config file created a session.")
         except Exception as error:
-            log.info("Credentials from config file failed to create a session. %s", error)
+            log.error("Credentials from config file failed to create a session. %s", error)
             exit(1)
     else:
 #========================================
@@ -494,7 +474,7 @@ def main():
                 Route53_Session = boto3.Session()
                 log.debug("Credentials from environment variables successfully created a session.")
             except Exception :
-                log.info("Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY found but didn't create a session successfully.")
+                log.error("Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY found but didn't create a session successfully.")
                 exit(1)
         else:
             log.debug("Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY not found.")
@@ -536,10 +516,10 @@ def main():
                 log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE in use, keys loaded")
 
                 try:
-                    Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID , aws_secret_access_key=AWS_Secret_Access_Key )
+                    Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID, aws_secret_access_key=AWS_Secret_Access_Key )
                     log.debug("Credentials from _FILE environment variables created a session successfully.")
                 except Exception :
-                    log.info("Credentials from file environment variables failed to create a session.")
+                    log.error("Credentials from file environment variables failed to create a session.")
             else:
                 log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE not found.")
  
@@ -558,6 +538,51 @@ def main():
                         log.debug("Default profile not found in credentials file.")
                         log.critical("No valid AWS credentials were found. Please check the documentation for how to provide them.")
                         exit(1)
+    return Route53_Session
+
+#====================================================================================================
+# Main function
+#====================================================================================================
+def main():
+    global Healthcheck_Interval_File_Name
+    global Healthcheck_Heartbeat_File_Name
+    global Heartbeat_Enabled
+
+    try:
+        Healthcheck_Heartbeat_File_Name = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
+        Heartbeat_Enabled = True
+        pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
+        try:
+            Healthcheck_Interval_File_Name = os.environ['HEALTHCHECK_INTERVAL_FILE']
+        except KeyError: 
+            Healthcheck_Interval_File_Name = None
+            Heartbeat_Enabled = False
+    except KeyError: 
+        Heartbeat_Enabled = False
+
+    Docker_Version = os.environ.get('AWS_DOCKER_VERSION', 'None')
+    log.info("Program starting. App version is {}, docker container version is {}".format(App_Version, Docker_Version))
+
+#====================================================================================================
+# Read the configuration file
+#====================================================================================================
+    if not os.path.isfile(Config_File_Name):
+        log.critical("Configuration file {} not found.".format(Config_File_Name))
+        return
+
+    Config_File_Moddate = os.stat(Config_File_Name)[8]
+    Config_File_Previous_Timestamp = time.ctime(Config_File_Moddate)
+
+    Read_Configuration()
+
+#====================================================================================================
+# Try to set up the AWS session object from the credientials file or environment variables
+#   1. Check if credentials were found in the config file
+#   2. Check if the credentials were set as environment variables
+#   3. Check for the _FILE environment variables and load from them if present 
+#   4. Try to get credentials from the default credentials file
+#====================================================================================================
+    Route53_Session = Try_Credential_Flow()
 
 # Create the Route53 client object
     Route53_Client = Route53_Session.client( 'route53' )
@@ -626,34 +651,43 @@ def main():
                                 log.info("DNS Address matches, no change needed to {} {}".format(Domain_Name_dot, Record_Name_dot))
                             else:
     # If we get here then the DNS is not pointing to our external IP address
-    # There are two options here
+    # There are two options here plus a potential error of not getting the current IP of the zone
                                 Record_IP = Get_DNS_Record_IP(Route53_Client, Hosted_Zone_Id, Record_Name_dot)
-                                if Record_IP == External_Address:
-    # If we get here then the DNS entry is correct but it hasn't propagated to whichever DNS server answered our query
-                                    log.warning("DNS update is pending")
+                                if Record_IP == None:
+                                    log.error("Didn't get a valid address for {} using DNS.".format(Record_Name_dot))
+                                    Issue_Updating = True
                                 else:
-    # If we get here then the DNS record needs updating, which we do and check that a HTTP 200 message is seen in the response
-                                    log.info("DNS Address needs updating")
-                                    if Update_DNS_Record_IP(Route53_Client, Hosted_Zone_Id, Record_Name_dot, External_Address, TTL_Interval ):
-                                        log.debug("DNS update accepted")
+                                    if Record_IP == External_Address:
+    # If we get here then the DNS entry is correct but it hasn't propagated to whichever DNS server answered our query
+                                        log.warning("DNS update is pending")
                                     else:
-                                        log.error("DNS update request was note accepted")
+    # If we get here then the DNS record needs updating, which we do and check that a HTTP 200 message is seen in the response
+                                        log.info("DNS Address needs updating")
+                                        if Update_DNS_Record_IP(Route53_Client, Hosted_Zone_Id, Record_Name_dot, External_Address, TTL_Interval ):
+                                            log.debug("DNS update accepted")
+                                        else:
+                                            log.error("DNS update request was note accepted")
             
+#====================================================================================================
+# After the flow, handle any issues updating the IP with the Exception_Interval flow
+#====================================================================================================
             if Issue_Updating:
                 Call_Webhook( WebHook_Alert + "UpdateIssue" )
                 log.warning("Sleeping for the exception interval {} seconds after an issue updating.".format(Exception_Interval))
                 time.sleep(Exception_Interval)        
             else:
                 Call_Webhook( WebHook_Alive )
-                log.info("Sleeping for {} seconds".format(Update_Interval))
     # If the environment variable for healthcheck was set, touch the test file
                 if Heartbeat_Enabled & os.path.isfile(Config_File_Name):
                     pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
                     log.debug("Touching healthcheck file {}".format(Healthcheck_Heartbeat_File_Name))
+                log.info("Sleeping for {} seconds".format(Update_Interval))
     # Go to sleep for the duration
                 time.sleep(Update_Interval)        
 
-    # Check if the config file has been updated. If it has, re-read it.
+#====================================================================================================
+# Check to see if the config file has been updated, if so re-load it.
+#====================================================================================================
             if not os.path.isfile(Config_File_Name):
                 log.critical("Configuration file {} no longer not found.".format(Config_File_Name))
             else:
@@ -665,6 +699,9 @@ def main():
                     Read_Configuration()
                     Config_File_Previous_Timestamp = Config_File_Current_Timestamp
 
+#====================================================================================================
+# Ultimately, check if the user killed the program
+#====================================================================================================
     except (KeyboardInterrupt):
         Call_Webhook( WebHook_Alert + "UserTerm" )
         log.warning("User terminated program")
