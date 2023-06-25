@@ -21,6 +21,20 @@ The Amazon AWS Route53 DDNS Client
 </thead>
 <tbody>
 <tr> 
+<td style="vertical-align:top">25/06/2023</td>
+<td style="vertical-align:top">2.2.0.0</td>
+<td align="left">
+<li>Bug fixes and code tidy.</li>
+<ol>
+<li>Added catches for several issues raised but AWS service outages.</li>
+<li>Code tidy and re-structure.</li>
+</ol>
+
+Built and pushed to DockerHub as https://hub.docker.com/r/kronos443/aws-route53-ddns tag V2.2.0.0
+
+><b>Please note, a configuration issue resulting in any domain record having an issue updating will cause the docker container to be be marked as unhealthy. Be mindful of this if your system is set to restart a container that marks itself as unhealthy since the solution may be to check the log and find any logical issues in the AWS configuration which might have caused this state rather than just restarting the container.</b>
+</tr>
+<tr> 
 <td style="vertical-align:top">15/10/2022</td>
 <td style="vertical-align:top">2.1.0.0</td>
 <td align="left">
@@ -34,7 +48,7 @@ The Amazon AWS Route53 DDNS Client
 
 Built and pushed to DockerHub as https://hub.docker.com/r/kronos443/aws-route53-ddns tag V2.1.0.0
 
-> <b>Please note, a configuration issue resulting in any domain record having an issue updating will cause the docker container to be be marked as unhealthy. Be mindful of this if your system is set to restart a container that marks itself as unhealthy since the solution may be to check the log and find any logical issues in the AWS configuration which might have caused this state rather than just restarting the container.</b>
+><b>Please note, a configuration issue resulting in any domain record having an issue updating will cause the docker container to be be marked as unhealthy. Be mindful of this if your system is set to restart a container that marks itself as unhealthy since the solution may be to check the log and find any logical issues in the AWS configuration which might have caused this state rather than just restarting the container.</b>
 </tr>
 <tr> 
 <td style="vertical-align:top">03/06/2022</td>
