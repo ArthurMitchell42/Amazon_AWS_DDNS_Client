@@ -29,8 +29,6 @@ Sleep_Time_Initial_Autherisation = 0
 Sleep_Time_Inter_Domain = 0
 WebHook_Alive = None
 WebHook_Alert = None
-AWS_Access_Key_ID = None 
-AWS_Secret_Access_Key = None
 AWS_Credential_Profile=None
 Healthcheck_Interval_File_Name = None
 Healthcheck_Heartbeat_File_Name = None
@@ -284,7 +282,7 @@ def Write_Interval(Update_Interval):
 #====================================================================================================
 # Read the app configuration from the .INI file.
 #====================================================================================================
-def Read_Configuration():
+def Read_Configuration(AWS_Keys):
     global Domain_Names
     global Record_Names
     global Update_Interval
@@ -294,9 +292,9 @@ def Read_Configuration():
     global Sleep_Time_Inter_Domain
     global WebHook_Alert
     global WebHook_Alive
-    global AWS_Access_Key_ID 
-    global AWS_Secret_Access_Key
-    global AWS_Credential_Profile
+#    global AWS_Access_Key_ID 
+#    global AWS_Secret_Access_Key
+#    global AWS_Credential_Profile
     global Healthcheck_Interval_File_Name
     global Heartbeat_Enabled
 
@@ -391,27 +389,31 @@ def Read_Configuration():
 # See if the config file contains the AWS access keys
 #====================================================================================================
     if config.has_option('Credentials', 'aws_access_key_id') and config.has_option('Credentials', 'aws_secret_access_key'):
-        AWS_Access_Key_ID = config['Credentials']['AWS_Access_Key_ID']
-        AWS_Secret_Access_Key = config['Credentials']['AWS_Secret_Access_Key']
+        AWS_Keys['AWS_Access_Key_ID']     = config['Credentials']['AWS_Access_Key_ID']
+        AWS_Keys['AWS_Secret_Access_Key'] = config['Credentials']['AWS_Secret_Access_Key']
 
-        if (AWS_Access_Key_ID[0] == "'" and AWS_Access_Key_ID[-1] == "'") or \
-           (AWS_Access_Key_ID[0] == '"' and AWS_Access_Key_ID[-1] == '"'):
-            AWS_Access_Key_ID = AWS_Access_Key_ID[1:-1]
+# Trim quotes from the key values if the INI file uses them
+        if (AWS_Keys['AWS_Access_Key_ID'][0] == "'" and AWS_Keys['AWS_Access_Key_ID'][-1] == "'") or \
+           (AWS_Keys['AWS_Access_Key_ID'][0] == '"' and AWS_Keys['AWS_Access_Key_ID'][-1] == '"'):
+            AWS_Keys['AWS_Access_Key_ID'] = AWS_Keys['AWS_Access_Key_ID'][1:-1]
  
-        if (AWS_Secret_Access_Key[0] == "'" and AWS_Secret_Access_Key[-1] == "'") or \
-           (AWS_Secret_Access_Key[0] == '"' and AWS_Secret_Access_Key[-1] == '"'):
-            AWS_Secret_Access_Key = AWS_Secret_Access_Key[1:-1]
+        if (AWS_Keys['AWS_Secret_Access_Key'][0] == "'" and AWS_Keys['AWS_Secret_Access_Key'][-1] == "'") or \
+           (AWS_Keys['AWS_Secret_Access_Key'][0] == '"' and AWS_Keys['AWS_Secret_Access_Key'][-1] == '"'):
+            AWS_Keys['AWS_Secret_Access_Key'] = AWS_Keys['AWS_Secret_Access_Key'][1:-1]
 
 #====================================================================================================
 # See if the config file contains the AWS credential profile
 #====================================================================================================
     if config.has_option('Credentials', 'AWS_Credential_Profile'):
-        AWS_Credential_Profile = config['Credentials']['AWS_Credential_Profile']
-        if (AWS_Credential_Profile[0] == "'" and AWS_Credential_Profile[-1] == "'") or \
-           (AWS_Credential_Profile[0] == '"' and AWS_Credential_Profile[-1] == '"'):
-            AWS_Credential_Profile = AWS_Credential_Profile[1:-1]
+        AWS_Keys['AWS_Credential_Profile'] = config['Credentials']['AWS_Credential_Profile']
+
+# Trim quotes from the key values if the INI file uses them
+        if (AWS_Keys['AWS_Credential_Profile'][0] == "'" and AWS_Keys['AWS_Credential_Profile'][-1] == "'") or \
+           (AWS_Keys['AWS_Credential_Profile'][0] == '"' and AWS_Keys['AWS_Credential_Profile'][-1] == '"'):
+            AWS_Keys['AWS_Credential_Profile'] = AWS_Keys['AWS_Credential_Profile'][1:-1]
     else:
-        AWS_Credential_Profile = os.environ.get('AWS_PROFILE','route53_user')
+# If the INI file does not list a credentials profile then assume the default value
+        AWS_Keys['AWS_Credential_Profile'] = os.environ.get('AWS_PROFILE','route53_user')
 
 #====================================================================================================
 # Write the logged update interval to the file used in the health check
@@ -426,7 +428,7 @@ def Read_Configuration():
     log.debug("Sleep_Time_Initial_Autherisation: {}".format(Sleep_Time_Initial_Autherisation))
     log.debug("Webhook_Alive: {}".format(WebHook_Alive))
     log.debug("Webhook_Alert: {}".format(WebHook_Alert))
-    if( AWS_Access_Key_ID and AWS_Secret_Access_Key ):
+    if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
         log.debug("AWS Access keys set from config file")
     return
 
@@ -437,15 +439,13 @@ def Read_Configuration():
 #   3. Check for the _FILE environment variables and load from them if present 
 #   4. Try to get credentials from the default credentials file
 #====================================================================================================
-def Try_Credential_Flow():
-    global AWS_Access_Key_ID 
-    global AWS_Secret_Access_Key
+def Try_Credential_Flow(AWS_Keys):
 #========================================
 # Option 1
 #========================================
-    if( AWS_Access_Key_ID and AWS_Secret_Access_Key ):
+    if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
         try:
-            Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID, aws_secret_access_key=AWS_Secret_Access_Key )
+            Route53_Session = boto3.Session(aws_access_key_id=AWS_Keys['AWS_Access_Key_ID'], aws_secret_access_key=AWS_Keys['AWS_Secret_Access_Key'] )
             log.debug("Credentials from config file created a session.")
         except Exception as error:
             log.error("Credentials from config file failed to create a session. %s", error)
@@ -454,22 +454,10 @@ def Try_Credential_Flow():
 #========================================
 # Option 2
 #========================================
-        Found_ID_Env_Var = False
-        Found_Secret_Env_Var = False
+        AWS_Keys['AWS_Access_Key_ID'] = os.environ.get('AWS_ACCESS_KEY_ID', None)
+        AWS_Keys['AWS_Secret_Access_Key'] = os.environ.get('AWS_SECRET_ACCESS_KEY', None)
 
-        try:
-            AWS_Access_Key_ID = os.environ['AWS_ACCESS_KEY_ID']
-            Found_ID_Env_Var = True
-        except KeyError: 
-            Found_ID_Env_Var = False
-
-        try:
-            AWS_Secret_Access_Key = os.environ['AWS_SECRET_ACCESS_KEY']
-            Found_Secret_Env_Var = True
-        except KeyError: 
-            Found_Secret_Env_Var = False
-
-        if Found_ID_Env_Var and Found_Secret_Env_Var:
+        if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
             try:
                 Route53_Session = boto3.Session()
                 log.debug("Credentials from environment variables successfully created a session.")
@@ -481,21 +469,10 @@ def Try_Credential_Flow():
 #========================================
 # Option 3
 #========================================
-            Found_ID_Env_Var = False
-            Found_Secret_Env_Var = False
-            try:
-                AWS_Access_Key_ID_File_Name = os.environ['AWS_ACCESS_KEY_ID_FILE']
-                Found_ID_Env_Var = True
-            except KeyError: 
-                Found_ID_Env_Var = False
+            AWS_Access_Key_ID_File_Name = os.environ.get('AWS_ACCESS_KEY_ID_FILE', None)
+            AWS_Secret_Access_Key_File_Name = os.environ.get('AWS_SECRET_ACCESS_KEY_FILE', None)
 
-            try:
-                AWS_Secret_Access_Key_File_Name = os.environ['AWS_SECRET_ACCESS_KEY_FILE']
-                Found_Secret_Env_Var = True
-            except KeyError: 
-                Found_Secret_Env_Var = False
-
-            if Found_ID_Env_Var and Found_Secret_Env_Var:
+            if AWS_Access_Key_ID_File_Name and AWS_Secret_Access_Key_File_Name:
                 try:
                     with open(AWS_Access_Key_ID_File_Name, 'r') as f:
                         AWS_Access_Key_ID = f.readline()
@@ -513,7 +490,7 @@ def Try_Credential_Flow():
                 AWS_Access_Key_ID = re.sub( Cleaning_Pattern, "", AWS_Access_Key_ID )
                 AWS_Secret_Access_Key = re.sub( Cleaning_Pattern, "", AWS_Secret_Access_Key )
 
-                log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE in use, keys loaded")
+                log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE found, keys loaded from these files.")
 
                 try:
                     Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID, aws_secret_access_key=AWS_Secret_Access_Key )
@@ -527,10 +504,10 @@ def Try_Credential_Flow():
 # Option 4
 #========================================
                 try:
-                    Route53_Session = boto3.Session(profile_name=AWS_Credential_Profile)
-                    log.debug("Profile {} found in credentials file.".format(AWS_Credential_Profile))
+                    Route53_Session = boto3.Session(profile_name=AWS_Keys['AWS_Credential_Profile'])
+                    log.debug("Profile {} found in credentials file.".format(AWS_Keys['AWS_Credential_Profile']))
                 except botocore.exceptions.ProfileNotFound :
-                    log.debug("Profile {} not found in credentials file. Trying the default profile.".format(AWS_Credential_Profile))
+                    log.debug("Profile {} not found in credentials file. Trying the default profile.".format(AWS_Keys['AWS_Credential_Profile']))
                     try:
                         Route53_Session = boto3.Session(profile_name='default')
                         log.debug("Profile default found in credentials file.")
@@ -547,6 +524,12 @@ def main():
     global Healthcheck_Interval_File_Name
     global Healthcheck_Heartbeat_File_Name
     global Heartbeat_Enabled
+
+    AWS_Keys = {
+        'AWS_Access_Key_ID'      : None,
+        'AWS_Secret_Access_Key'  : None,
+        'AWS_Credential_Profile' : None
+    }    
 
     try:
         Healthcheck_Heartbeat_File_Name = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
@@ -573,7 +556,7 @@ def main():
     Config_File_Moddate = os.stat(Config_File_Name)[8]
     Config_File_Previous_Timestamp = time.ctime(Config_File_Moddate)
 
-    Read_Configuration()
+    Read_Configuration(AWS_Keys)
 
 #====================================================================================================
 # Try to set up the AWS session object from the credientials file or environment variables
@@ -582,7 +565,7 @@ def main():
 #   3. Check for the _FILE environment variables and load from them if present 
 #   4. Try to get credentials from the default credentials file
 #====================================================================================================
-    Route53_Session = Try_Credential_Flow()
+    Route53_Session = Try_Credential_Flow(AWS_Keys)
 
 # Create the Route53 client object
     Route53_Client = Route53_Session.client( 'route53' )
