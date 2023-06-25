@@ -17,60 +17,35 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 #====================================================================================================
-# Global definitions and environment variables
-#====================================================================================================
-App_Version = "2.2.0.0"
-Domain_Names = []
-Record_Names = []
-Update_Interval = 0
-Exception_Interval = 0
-TTL_Interval = 0
-Sleep_Time_Initial_Autherisation = 0
-Sleep_Time_Inter_Domain = 0
-WebHook_Alive = None
-WebHook_Alert = None
-AWS_Access_Key_ID = None 
-AWS_Secret_Access_Key = None
-AWS_Credential_Profile=None
-Healthcheck_Interval_File_Name = None
-Healthcheck_Heartbeat_File_Name = None
-Heartbeat_Enabled = False
-
-#====================================================================================================
-# Setup file paths & names environment variables
+# Setup file paths & names from environment variables
 #====================================================================================================
 File_Paths = os.environ.get('AWS_CONFIG_PATH', "./")
 if( File_Paths[-1] != '/' ):
     File_Paths = File_Paths + '/'
 
 if( not os.path.exists(File_Paths) ):
-    print("Path {} does not exist".format(File_Paths))
+    print("Path {} does not exist. Set the environment variable AWS_CONFIG_PATH to point to the directory containing your AWS_Route53_DDNS.ini file.".format(File_Paths))
     exit(1)
 
 Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
-Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
 
 #====================================================================================================
-# Set up logging
+# Set up logging objects
 #====================================================================================================
 log = logging.getLogger('__name__')
-
-log.setLevel(logging.DEBUG)
-
-# Setup logging to a file
+# Setup logging to a file and the console
 logfile = logging.handlers.RotatingFileHandler(Log_File_Name, maxBytes=100000, backupCount=5)
-logfile.setLevel(logging.DEBUG)
-
-# Setup logging to the console
 logcons = logging.StreamHandler()
-logcons.setLevel(logging.DEBUG)
 
-# Define the format of the log information
-logform = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s') #  %(name)s
-logfile.setFormatter(logform)
-logcons.setFormatter(logform)
-log.addHandler(logfile)
-log.addHandler(logcons)
+#====================================================================================================
+# Clean a string if it's enclosed in quotes
+#   Used at various points to clean up settings from the configuration (.ini) file
+#====================================================================================================
+def Clean_Quotes( s ):
+    if (s[0] == "'" and s[-1] == "'") or \
+       (s[0] == '"' and s[-1] == '"'):
+        s = s[1:-1]
+    return s
 
 #====================================================================================================
 # Call a webhook
@@ -265,53 +240,36 @@ def Get_External_IP_From_AWS():
 # If health checking is enabled, update the file that conveys the update interval to the 
 # shell script.
 #====================================================================================================
-def Write_Interval(Update_Interval):
-    global Healthcheck_Interval_File_Name
-
+def Write_Health_Interval(HealthCheck, Update_Interval):
     Health_Interval = Update_Interval + int( float(Update_Interval) / 20.0)        
 
-    if Healthcheck_Interval_File_Name:
+    if HealthCheck['Healthcheck_Interval_File_Name']:
         try:
-            open(Healthcheck_Interval_File_Name, 'w')
-            with open(Healthcheck_Interval_File_Name, 'w') as f:
+            with open(HealthCheck['Healthcheck_Interval_File_Name'], 'w') as f:
                 f.write(str(Health_Interval))
         except Exception as e:
-            log.error("Can't write to update interval file: {}".format(Healthcheck_Interval_File_Name))
+            log.error("Can't write to update interval file: {}".format(HealthCheck['Healthcheck_Interval_File_Name']))
+            return
 
-    log.debug("Updating health check interval to: {} seconds".format(Health_Interval))
+    log.debug("Updating health check interval to {} seconds".format(Health_Interval))
     return
 
 #====================================================================================================
 # Read the app configuration from the .INI file.
 #====================================================================================================
-def Read_Configuration():
-    global Domain_Names
-    global Record_Names
-    global Update_Interval
-    global Exception_Interval
-    global TTL_Interval
-    global Sleep_Time_Initial_Autherisation
-    global Sleep_Time_Inter_Domain
-    global WebHook_Alert
-    global WebHook_Alive
-    global AWS_Access_Key_ID 
-    global AWS_Secret_Access_Key
-    global AWS_Credential_Profile
-    global Healthcheck_Interval_File_Name
-    global Heartbeat_Enabled
-
+def Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domains, Common_Parameters):
     config = configparser.ConfigParser()
     try:
         config.read(Config_File_Name)
     except Exception as err:
         log.critical("Exception reading configuration file {}".format(err))
 
-# Check that the 'Domains' section is present in the config file:
+    # Check that the 'Domains' section is present in the config file:
     if not config.has_section('Domains'):
         log.critical("Domain section not found in the configuration file.")
         return
 
-# Check what the logging levels are to be in the configuration file
+    # Check what the logging levels are to be in the configuration file
     if config.has_option('Defaults', 'Log_Level_Logfile'):
         level = config['Defaults']['Log_Level_Logfile'].lower()
         if    level == 'debug'    : logfile.setLevel(logging.DEBUG)
@@ -334,99 +292,102 @@ def Read_Configuration():
     else:
         logfile.setLevel(logging.ERROR)
 
-# Extract the zone (domain) names and record names
+    #==================================================
+    # Extract the zone (domain) names and record names
+    #==================================================
     if len(config.options('Domains')) == 0:
         log.critical("No list of domains found the the Domains section of configuration file.")
-        return
+        exit(1)
 
-    Domain_Names = []
-    Record_Names = []
+    #===============================================
+    # Get the list of domains to update
+    #===============================================
+    Domains['Domain_Names'] = []
+    Domains['Record_Names'] = []
     for l in config.options('Domains'):
-        Domain_Names.append(l) 
-        Record_Names.append(config['Domains'][l]) 
+        Domains['Domain_Names'].append(l) 
+        Domains['Record_Names'].append(config['Domains'][l]) 
     
+    #===============================================
+    # Get other parameters
+    #===============================================
     if config.has_option('Defaults', 'Update_Interval'):
-        Update_Interval = int(config['Defaults']['Update_Interval'])
-        if Update_Interval < 30: Update_Interval = 30
+        Common_Parameters['Update_Interval'] = int(config['Defaults']['Update_Interval'])
+        if Common_Parameters['Update_Interval'] < 30: Common_Parameters['Update_Interval'] = 30
     else:
-        Update_Interval = 7200
+        Common_Parameters['Update_Interval'] = 7200
 
     if config.has_option('Defaults', 'Exception_Interval'):
-        Exception_Interval = int(config['Defaults']['Exception_Interval'])
-        if Exception_Interval < 30: Exception_Interval = 30
+        Common_Parameters['Exception_Interval'] = int(config['Defaults']['Exception_Interval'])
+        if Common_Parameters['Exception_Interval'] < 30: 
+            Common_Parameters['Exception_Interval'] = 30
     else:
-        Exception_Interval = Update_Interval
+        Common_Parameters['Exception_Interval'] = Common_Parameters['Update_Interval']
 
     if config.has_option('Defaults', 'ttl'):
-        TTL_Interval = int(config['Defaults']['ttl'])
-        if TTL_Interval < 60: TTL_Interval = 60
+        Common_Parameters['TTL_Interval'] = int(config['Defaults']['ttl'])
+        if Common_Parameters['TTL_Interval'] < 60: 
+            Common_Parameters['TTL_Interval'] = 60
     else:
-        TTL_Interval = 3600
+        Common_Parameters['TTL_Interval'] = 3600
 
     if config.has_option('Defaults', 'Sleep_Time_Initial_Autherisation'):
-        Sleep_Time_Initial_Autherisation = int(config['Defaults']['Sleep_Time_Initial_Autherisation'])
-        if Sleep_Time_Initial_Autherisation < 1: Sleep_Time_Initial_Autherisation = 1
+        Common_Parameters['Sleep_Time_Initial_Autherisation'] = int(config['Defaults']['Sleep_Time_Initial_Autherisation'])
+        if Common_Parameters['Sleep_Time_Initial_Autherisation'] < 1: 
+            Common_Parameters['Sleep_Time_Initial_Autherisation'] = 1
     else:
-        Sleep_Time_Initial_Autherisation = 1
+        Common_Parameters['Sleep_Time_Initial_Autherisation'] = 1
 
     if config.has_option('Defaults', 'Sleep_Time_Inter_Domain'):
-        Sleep_Time_Initial_Autherisation = int(config['Defaults']['Sleep_Time_Inter_Domain'])
-        if Sleep_Time_Inter_Domain < 1: Sleep_Time_Inter_Domain = 1
+        Common_Parameters['Sleep_Time_Inter_Domain'] = int(config['Defaults']['Sleep_Time_Inter_Domain'])
+        if Common_Parameters['Sleep_Time_Inter_Domain'] < 1: 
+            Common_Parameters['Sleep_Time_Inter_Domain'] = 1
     else:
-        Sleep_Time_Inter_Domain = 1
+        Common_Parameters['Sleep_Time_Inter_Domain'] = 1
 
     if config.has_option('Defaults', 'Webhook_Alive'):
-        WebHook_Alive = config['Defaults']['Webhook_Alive']
-        if (WebHook_Alive[0] == "'" and WebHook_Alive[-1] == "'") or \
-           (WebHook_Alive[0] == '"' and WebHook_Alive[-1] == '"'):
-            WebHook_Alive = WebHook_Alive[1:-1]
+        WebHooks['WebHook_Alive'] = config['Defaults']['Webhook_Alive']
+        WebHooks['WebHook_Alive'] = Clean_Quotes( WebHooks['WebHook_Alive'] )
 
     if config.has_option('Defaults', 'Webhook_Alert'):
-        WebHook_Alert = config['Defaults']['Webhook_Alert']
-        if (WebHook_Alert[0] == "'" and WebHook_Alert[-1] == "'") or \
-           (WebHook_Alert[0] == '"' and WebHook_Alert[-1] == '"'):
-            WebHook_Alert = WebHook_Alert[1:-1]
+        WebHooks['WebHook_Alert'] = config['Defaults']['Webhook_Alert']
+        WebHooks['WebHook_Alert'] = Clean_Quotes( WebHooks['WebHook_Alert'] )
 
-#====================================================================================================
-# See if the config file contains the AWS access keys
-#====================================================================================================
+    #====================================================================================================
+    # See if the config file contains the AWS access keys
+    #====================================================================================================
     if config.has_option('Credentials', 'aws_access_key_id') and config.has_option('Credentials', 'aws_secret_access_key'):
-        AWS_Access_Key_ID = config['Credentials']['AWS_Access_Key_ID']
-        AWS_Secret_Access_Key = config['Credentials']['AWS_Secret_Access_Key']
+        AWS_Keys['AWS_Access_Key_ID']     = config['Credentials']['AWS_Access_Key_ID']
+        AWS_Keys['AWS_Secret_Access_Key'] = config['Credentials']['AWS_Secret_Access_Key']
+        # Trim quotes from the key values if the INI file uses them
+        AWS_Keys['AWS_Access_Key_ID']     = Clean_Quotes( AWS_Keys['AWS_Access_Key_ID'] )
+        AWS_Keys['AWS_Secret_Access_Key'] = Clean_Quotes( AWS_Keys['AWS_Secret_Access_Key'] )
 
-        if (AWS_Access_Key_ID[0] == "'" and AWS_Access_Key_ID[-1] == "'") or \
-           (AWS_Access_Key_ID[0] == '"' and AWS_Access_Key_ID[-1] == '"'):
-            AWS_Access_Key_ID = AWS_Access_Key_ID[1:-1]
- 
-        if (AWS_Secret_Access_Key[0] == "'" and AWS_Secret_Access_Key[-1] == "'") or \
-           (AWS_Secret_Access_Key[0] == '"' and AWS_Secret_Access_Key[-1] == '"'):
-            AWS_Secret_Access_Key = AWS_Secret_Access_Key[1:-1]
-
-#====================================================================================================
-# See if the config file contains the AWS credential profile
-#====================================================================================================
+    #====================================================================================================
+    # See if the config file contains the AWS credential profile
+    #====================================================================================================
     if config.has_option('Credentials', 'AWS_Credential_Profile'):
-        AWS_Credential_Profile = config['Credentials']['AWS_Credential_Profile']
-        if (AWS_Credential_Profile[0] == "'" and AWS_Credential_Profile[-1] == "'") or \
-           (AWS_Credential_Profile[0] == '"' and AWS_Credential_Profile[-1] == '"'):
-            AWS_Credential_Profile = AWS_Credential_Profile[1:-1]
+        AWS_Keys['AWS_Credential_Profile'] = config['Credentials']['AWS_Credential_Profile']
+        # Trim quotes from the key values if the INI file uses them
+        AWS_Keys['AWS_Credential_Profile'] = Clean_Quotes( AWS_Keys['AWS_Credential_Profile'] )
     else:
-        AWS_Credential_Profile = os.environ.get('AWS_PROFILE','route53_user')
+        # If the INI file does not list a credentials profile then assume the default value
+        AWS_Keys['AWS_Credential_Profile'] = os.environ.get('AWS_PROFILE','route53_user')
 
 #====================================================================================================
 # Write the logged update interval to the file used in the health check
 #====================================================================================================
-    if Heartbeat_Enabled:
-        Write_Interval(Update_Interval)
+    if HealthCheck['Heartbeat_Enabled']:
+        Write_Health_Interval(HealthCheck, Common_Parameters['Update_Interval'])
 
-    log.debug("Domains and records loaded: {} {}".format(Domain_Names, Record_Names))
-    log.debug("Interval loaded: {}".format(Update_Interval))
-    log.debug("Exception interval loaded: {}".format(Exception_Interval))
-    log.debug("TTL: {}".format(TTL_Interval))
-    log.debug("Sleep_Time_Initial_Autherisation: {}".format(Sleep_Time_Initial_Autherisation))
-    log.debug("Webhook_Alive: {}".format(WebHook_Alive))
-    log.debug("Webhook_Alert: {}".format(WebHook_Alert))
-    if( AWS_Access_Key_ID and AWS_Secret_Access_Key ):
+    log.debug("Domains and records loaded: {} {}".format(Domains['Domain_Names'], Domains['Record_Names']))
+    log.debug("Interval loaded: {}".format(Common_Parameters['Update_Interval']))
+    log.debug("Exception interval loaded: {}".format(Common_Parameters['Exception_Interval']))
+    log.debug("TTL: {}".format(Common_Parameters['TTL_Interval']))
+    log.debug("Sleep_Time_Initial_Autherisation: {}".format(Common_Parameters['Sleep_Time_Initial_Autherisation']))
+    log.debug("Webhook_Alive: {}".format(WebHooks['WebHook_Alive']))
+    log.debug("Webhook_Alert: {}".format(WebHooks['WebHook_Alert']))
+    if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
         log.debug("AWS Access keys set from config file")
     return
 
@@ -437,89 +398,65 @@ def Read_Configuration():
 #   3. Check for the _FILE environment variables and load from them if present 
 #   4. Try to get credentials from the default credentials file
 #====================================================================================================
-def Try_Credential_Flow():
-    global AWS_Access_Key_ID 
-    global AWS_Secret_Access_Key
+def Try_Credential_Flow(AWS_Keys):
 #========================================
 # Option 1
 #========================================
-    if( AWS_Access_Key_ID and AWS_Secret_Access_Key ):
+    if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
         try:
-            Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID, aws_secret_access_key=AWS_Secret_Access_Key )
-            log.debug("Credentials from config file created a session.")
+            Route53_Session = boto3.Session(aws_access_key_id=AWS_Keys['AWS_Access_Key_ID'], 
+                                            aws_secret_access_key=AWS_Keys['AWS_Secret_Access_Key'] )
+            log.debug("Credentials found in the config (.ini) file successfully created a session.")
         except Exception as error:
-            log.error("Credentials from config file failed to create a session. %s", error)
+            log.error("Credentials found in the config (.ini) file failed to successfully create a session. Error response: ".format(error))
             exit(1)
     else:
 #========================================
 # Option 2
 #========================================
-        Found_ID_Env_Var = False
-        Found_Secret_Env_Var = False
+        AWS_Keys['AWS_Access_Key_ID'] = os.environ.get('AWS_ACCESS_KEY_ID', None)
+        AWS_Keys['AWS_Secret_Access_Key'] = os.environ.get('AWS_SECRET_ACCESS_KEY', None)
 
-        try:
-            AWS_Access_Key_ID = os.environ['AWS_ACCESS_KEY_ID']
-            Found_ID_Env_Var = True
-        except KeyError: 
-            Found_ID_Env_Var = False
-
-        try:
-            AWS_Secret_Access_Key = os.environ['AWS_SECRET_ACCESS_KEY']
-            Found_Secret_Env_Var = True
-        except KeyError: 
-            Found_Secret_Env_Var = False
-
-        if Found_ID_Env_Var and Found_Secret_Env_Var:
+        if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
             try:
                 Route53_Session = boto3.Session()
                 log.debug("Credentials from environment variables successfully created a session.")
-            except Exception :
-                log.error("Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY found but didn't create a session successfully.")
+            except Exception as error:
+                log.error("Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY found but didn't successfully create a session. Error: {}".format(error))
                 exit(1)
         else:
             log.debug("Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY not found.")
 #========================================
 # Option 3
 #========================================
-            Found_ID_Env_Var = False
-            Found_Secret_Env_Var = False
-            try:
-                AWS_Access_Key_ID_File_Name = os.environ['AWS_ACCESS_KEY_ID_FILE']
-                Found_ID_Env_Var = True
-            except KeyError: 
-                Found_ID_Env_Var = False
+            AWS_Access_Key_ID_File_Name = os.environ.get('AWS_ACCESS_KEY_ID_FILE', None)
+            AWS_Secret_Access_Key_File_Name = os.environ.get('AWS_SECRET_ACCESS_KEY_FILE', None)
 
-            try:
-                AWS_Secret_Access_Key_File_Name = os.environ['AWS_SECRET_ACCESS_KEY_FILE']
-                Found_Secret_Env_Var = True
-            except KeyError: 
-                Found_Secret_Env_Var = False
-
-            if Found_ID_Env_Var and Found_Secret_Env_Var:
+            if AWS_Access_Key_ID_File_Name and AWS_Secret_Access_Key_File_Name:
                 try:
                     with open(AWS_Access_Key_ID_File_Name, 'r') as f:
                         AWS_Access_Key_ID = f.readline()
-                except Exception as e:
-                    log.error("Can't read AWS_ACCESS_KEY_ID_FILE file: {}".format(AWS_Access_Key_ID_File_Name))
+                except Exception as error:
+                    log.error("Can't read AWS_ACCESS_KEY_ID_FILE file: {} Error: {}".format(AWS_Access_Key_ID_File_Name, error))
                     exit(1)
                 try:
                     with open(AWS_Secret_Access_Key_File_Name, 'r') as f:
                         AWS_Secret_Access_Key = f.readline()
-                except Exception as e:
-                    log.error("Can't read AWS_SECRET_ACCESS_KEY_FILE file: {}".format(AWS_Secret_Access_Key_File_Name))
+                except Exception as error:
+                    log.error("Can't read AWS_SECRET_ACCESS_KEY_FILE file: {} Error: {}".format(AWS_Secret_Access_Key_File_Name, error))
                     exit(1)
 
                 Cleaning_Pattern = r"[ \n\r'\"]"
                 AWS_Access_Key_ID = re.sub( Cleaning_Pattern, "", AWS_Access_Key_ID )
                 AWS_Secret_Access_Key = re.sub( Cleaning_Pattern, "", AWS_Secret_Access_Key )
 
-                log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE in use, keys loaded")
+                log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE found, keys loaded from these files.")
 
                 try:
                     Route53_Session = boto3.Session(aws_access_key_id=AWS_Access_Key_ID, aws_secret_access_key=AWS_Secret_Access_Key )
                     log.debug("Credentials from _FILE environment variables created a session successfully.")
-                except Exception :
-                    log.error("Credentials from file environment variables failed to create a session.")
+                except Exception  as error:
+                    log.error("Credentials from file environment variables failed to create a session. Error {}".format(error))
             else:
                 log.debug("Environment variables AWS_ACCESS_KEY_ID_FILE and AWS_SECRET_ACCESS_KEY_FILE not found.")
  
@@ -527,10 +464,10 @@ def Try_Credential_Flow():
 # Option 4
 #========================================
                 try:
-                    Route53_Session = boto3.Session(profile_name=AWS_Credential_Profile)
-                    log.debug("Profile {} found in credentials file.".format(AWS_Credential_Profile))
+                    Route53_Session = boto3.Session(profile_name=AWS_Keys['AWS_Credential_Profile'])
+                    log.debug("Profile {} found in credentials file.".format(AWS_Keys['AWS_Credential_Profile']))
                 except botocore.exceptions.ProfileNotFound :
-                    log.debug("Profile {} not found in credentials file. Trying the default profile.".format(AWS_Credential_Profile))
+                    log.debug("Profile {} not found in credentials file. Trying the default profile.".format(AWS_Keys['AWS_Credential_Profile']))
                     try:
                         Route53_Session = boto3.Session(profile_name='default')
                         log.debug("Profile default found in credentials file.")
@@ -541,27 +478,83 @@ def Try_Credential_Flow():
     return Route53_Session
 
 #====================================================================================================
+# Check if the environment lists the heartbeat and interval files.
+#====================================================================================================
+def Init_Health(HealthCheck):
+    HealthCheck['Healthcheck_Heartbeat_File_Name'] = os.environ.get('HEALTHCHECK_HEARTBEAT_FILE', None)
+    HealthCheck['Healthcheck_Interval_File_Name']  = os.environ.get('HEALTHCHECK_INTERVAL_FILE', None)
+
+    if( HealthCheck['Healthcheck_Heartbeat_File_Name'] and HealthCheck['Healthcheck_Interval_File_Name']):
+        pathlib.Path( HealthCheck['Healthcheck_Heartbeat_File_Name'] ).touch()
+        HealthCheck['Heartbeat_Enabled'] = True
+        log.debug("Health file names found.")
+    else:
+        log.debug("Health file names not found.")
+    return
+
+#====================================================================================================
 # Main function
 #====================================================================================================
 def main():
-    global Healthcheck_Interval_File_Name
-    global Healthcheck_Heartbeat_File_Name
-    global Heartbeat_Enabled
+    #================================================
+    # Set logging parameters
+    #================================================
+    log.setLevel(logging.DEBUG)
+    # Setup logging parameters to a file and console
+    logfile.setLevel(logging.DEBUG)
+    logcons.setLevel(logging.DEBUG)
 
-    try:
-        Healthcheck_Heartbeat_File_Name = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
-        Heartbeat_Enabled = True
-        pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
-        try:
-            Healthcheck_Interval_File_Name = os.environ['HEALTHCHECK_INTERVAL_FILE']
-        except KeyError: 
-            Healthcheck_Interval_File_Name = None
-            Heartbeat_Enabled = False
-    except KeyError: 
-        Heartbeat_Enabled = False
+    # Define the format of the log information
+    logform = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
+    logfile.setFormatter(logform)
+    logcons.setFormatter(logform)
+    log.addHandler(logfile)
+    log.addHandler(logcons)
 
+    #================================================
+    # Set some main values
+    #================================================
+    App_Version = "2.2.0.0"
     Docker_Version = os.environ.get('AWS_DOCKER_VERSION', 'None')
-    log.info("Program starting. App version is {}, docker container version is {}".format(App_Version, Docker_Version))
+    log.info("Program starting. App version is {}".format(App_Version))
+    if( Docker_Version ):
+        log.info("Docker environment is detected, container version is {}".format(Docker_Version))
+
+    Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
+
+    Last_External_Address = "0.0.0.0"
+
+    HealthCheck = {
+        'Healthcheck_Interval_File_Name'  : None,
+        'Healthcheck_Heartbeat_File_Name' : None,
+        'Heartbeat_Enabled'               : False
+    }    
+
+    AWS_Keys = {
+        'AWS_Access_Key_ID'      : None,
+        'AWS_Secret_Access_Key'  : None,
+        'AWS_Credential_Profile' : None
+    }    
+
+    WebHooks = {
+        'WebHook_Alive' : None,
+        'WebHook_Alert' : None
+    }    
+
+    Domains = {
+        'Domain_Names' : [],
+        'Record_Names' : []
+    }    
+
+    Common_Parameters = {
+        'Update_Interval'                  : 0,
+        'Exception_Interval'               : 0,
+        'TTL_Interval'                     : 0,
+        'Sleep_Time_Initial_Autherisation' : 0,
+        'Sleep_Time_Inter_Domain'          : 0
+    }    
+
+    Init_Health(HealthCheck)
 
 #====================================================================================================
 # Read the configuration file
@@ -573,7 +566,7 @@ def main():
     Config_File_Moddate = os.stat(Config_File_Name)[8]
     Config_File_Previous_Timestamp = time.ctime(Config_File_Moddate)
 
-    Read_Configuration()
+    Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domains, Common_Parameters)
 
 #====================================================================================================
 # Try to set up the AWS session object from the credientials file or environment variables
@@ -582,30 +575,30 @@ def main():
 #   3. Check for the _FILE environment variables and load from them if present 
 #   4. Try to get credentials from the default credentials file
 #====================================================================================================
-    Route53_Session = Try_Credential_Flow()
+    Route53_Session = Try_Credential_Flow(AWS_Keys)
 
-# Create the Route53 client object
+    # Create the Route53 client object
     Route53_Client = Route53_Session.client( 'route53' )
 
-# Test the credentials by listing all the hosted zones for a user
+    # Test the credentials by listing all the hosted zones for a user. The zones value is unused,
+    #  only the fact that an exception might be returned by calling list_hosted_zones_by_name matters.
     try:
         zones = Route53_Client.list_hosted_zones_by_name()
         log.debug("Testing credentials: Successfully listed zones.")
     except botocore.exceptions.ClientError as error:
-        log.error("Testing credentials: Could not list zones: %s", error)
+        log.error("Testing credentials: Could not list zones: {}".format(error))
         exit(1)
     except botocore.exceptions.NoCredentialsError as error:
-        log.fatal("Testing credentials: Could not list zones with the loaded credentials: %s", error)
+        log.fatal("Testing credentials: Could not list zones with the loaded credentials: {}".format(error))
         exit(1)
     except botocore.exceptions.HTTPClientError as error:
-        log.fatal("Testing credentials: Could not list zones with the loaded credentials: %s", error)
+        log.fatal("Testing credentials: Could not list zones with the loaded credentials: {}".format(error))
         exit(1)
 
 #====================================================================================================
 # Initialise a false last IP address to force an update check
 #====================================================================================================
-    time.sleep(Sleep_Time_Initial_Autherisation)
-    Last_External_Address = "0.0.0.0"
+    time.sleep(Common_Parameters['Sleep_Time_Initial_Autherisation'])
 
 #====================================================================================================
 # The main functional loop
@@ -627,10 +620,10 @@ def main():
                     Last_External_Address = External_Address
             
     # Loop round the list of domain names and records we are montioring
-                for Domain_Index in range(0, len(Domain_Names)):
-                    time.sleep(Sleep_Time_Inter_Domain)
-                    Domain_Name_dot = Domain_Names[Domain_Index].lower() + '.'
-                    Record_Name_dot = Record_Names[Domain_Index].lower() + '.'
+                for Domain_Index in range(0, len(Domains['Domain_Names'])):
+                    time.sleep(Common_Parameters['Sleep_Time_Inter_Domain'])
+                    Domain_Name_dot = Domains['Domain_Names'][Domain_Index].lower() + '.'
+                    Record_Name_dot = Domains['Record_Names'][Domain_Index].lower() + '.'
                     log.debug("Checking domain {} for record {}".format(Domain_Name_dot, Record_Name_dot))
     # Get the hosted zone ID for the domain being checked
                     Hosted_Zone_Id = Find_Hosted_Zone_Id(Route53_Client, Domain_Name_dot)
@@ -663,7 +656,7 @@ def main():
                                     else:
     # If we get here then the DNS record needs updating, which we do and check that a HTTP 200 message is seen in the response
                                         log.info("DNS Address needs updating")
-                                        if Update_DNS_Record_IP(Route53_Client, Hosted_Zone_Id, Record_Name_dot, External_Address, TTL_Interval ):
+                                        if Update_DNS_Record_IP(Route53_Client, Hosted_Zone_Id, Record_Name_dot, External_Address, Common_Parameters['TTL_Interval'] ):
                                             log.debug("DNS update accepted")
                                         else:
                                             log.error("DNS update request was note accepted")
@@ -672,38 +665,38 @@ def main():
 # After the flow, handle any issues updating the IP with the Exception_Interval flow
 #====================================================================================================
             if Issue_Updating:
-                Call_Webhook( WebHook_Alert + "UpdateIssue" )
-                log.warning("Sleeping for the exception interval {} seconds after an issue updating.".format(Exception_Interval))
-                time.sleep(Exception_Interval)        
+                Call_Webhook( WebHooks['WebHook_Alert'] + "UpdateIssue" )
+                log.warning("Sleeping for the exception interval {} seconds after an issue updating.".format(Common_Parameters['Exception_Interval']))
+                time.sleep(Common_Parameters['Exception_Interval'])        
             else:
-                Call_Webhook( WebHook_Alive )
+                Call_Webhook( WebHooks['WebHook_Alive'] )
     # If the environment variable for healthcheck was set, touch the test file
-                if Heartbeat_Enabled & os.path.isfile(Config_File_Name):
-                    pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
-                    log.debug("Touching healthcheck file {}".format(Healthcheck_Heartbeat_File_Name))
-                log.info("Sleeping for {} seconds".format(Update_Interval))
+                if HealthCheck['Heartbeat_Enabled']:
+                    pathlib.Path( HealthCheck['Healthcheck_Heartbeat_File_Name'] ).touch()
+                    log.debug("Touching healthcheck file {}".format(HealthCheck['Healthcheck_Heartbeat_File_Name']))
+                log.info("Sleeping for {} seconds".format(Common_Parameters['Update_Interval']))
     # Go to sleep for the duration
-                time.sleep(Update_Interval)        
+                time.sleep(Common_Parameters['Update_Interval'])        
 
 #====================================================================================================
 # Check to see if the config file has been updated, if so re-load it.
 #====================================================================================================
             if not os.path.isfile(Config_File_Name):
-                log.critical("Configuration file {} no longer not found.".format(Config_File_Name))
+                log.error("Configuration file {} no longer not found.".format(Config_File_Name))
             else:
                 Config_File_Moddate = os.stat(Config_File_Name)[8]
                 Config_File_Current_Timestamp = time.ctime(Config_File_Moddate)
 
                 if Config_File_Previous_Timestamp != Config_File_Current_Timestamp:
                     log.info("Config file {} has been updated, re-reading.".format(Config_File_Name))
-                    Read_Configuration()
+                    Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domains, Common_Parameters)
                     Config_File_Previous_Timestamp = Config_File_Current_Timestamp
 
 #====================================================================================================
 # Ultimately, check if the user killed the program
 #====================================================================================================
     except (KeyboardInterrupt):
-        Call_Webhook( WebHook_Alert + "UserTerm" )
+        Call_Webhook( WebHooks['WebHook_Alert'] + "UserTerm" )
         log.warning("User terminated program")
         return
 
