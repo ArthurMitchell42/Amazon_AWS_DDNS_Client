@@ -19,7 +19,7 @@ from urllib.error import URLError
 #====================================================================================================
 # Global definitions and environment variables
 #====================================================================================================
-App_Version = "2.2.0.0"
+# App_Version = "2.2.0.0"
 Domain_Names = []
 Record_Names = []
 Update_Interval = 0
@@ -27,8 +27,8 @@ Exception_Interval = 0
 TTL_Interval = 0
 Sleep_Time_Initial_Autherisation = 0
 Sleep_Time_Inter_Domain = 0
-WebHook_Alive = None
-WebHook_Alert = None
+# WebHook_Alive = None
+# WebHook_Alert = None
 # Healthcheck_Interval_File_Name = None
 # Healthcheck_Heartbeat_File_Name = None
 # Heartbeat_Enabled = False
@@ -68,6 +68,15 @@ logfile.setFormatter(logform)
 logcons.setFormatter(logform)
 log.addHandler(logfile)
 log.addHandler(logcons)
+
+#====================================================================================================
+# Clean a string if it's enclosed in quotes
+#====================================================================================================
+def Clean_Quotes( s ):
+    if (s[0] == "'" and s[-1] == "'") or \
+       (s[0] == '"' and s[-1] == '"'):
+        s = s[1:-1]
+    return s
 
 #====================================================================================================
 # Call a webhook
@@ -282,7 +291,7 @@ def Write_Health_Interval(HealthCheck, Update_Interval):
 #====================================================================================================
 # Read the app configuration from the .INI file.
 #====================================================================================================
-def Read_Configuration(AWS_Keys, HealthCheck):
+def Read_Configuration(AWS_Keys, HealthCheck, WebHooks):
     global Domain_Names
     global Record_Names
     global Update_Interval
@@ -290,8 +299,8 @@ def Read_Configuration(AWS_Keys, HealthCheck):
     global TTL_Interval
     global Sleep_Time_Initial_Autherisation
     global Sleep_Time_Inter_Domain
-    global WebHook_Alert
-    global WebHook_Alive
+    # global WebHook_Alert
+    # global WebHook_Alive
 #    global AWS_Access_Key_ID 
 #    global AWS_Secret_Access_Key
 #    global AWS_Credential_Profile
@@ -374,16 +383,18 @@ def Read_Configuration(AWS_Keys, HealthCheck):
         Sleep_Time_Inter_Domain = 1
 
     if config.has_option('Defaults', 'Webhook_Alive'):
-        WebHook_Alive = config['Defaults']['Webhook_Alive']
-        if (WebHook_Alive[0] == "'" and WebHook_Alive[-1] == "'") or \
-           (WebHook_Alive[0] == '"' and WebHook_Alive[-1] == '"'):
-            WebHook_Alive = WebHook_Alive[1:-1]
+        WebHooks['WebHook_Alive'] = config['Defaults']['Webhook_Alive']
+        WebHooks['WebHook_Alive'] = Clean_Quotes( WebHooks['WebHook_Alive'] )
+        # if (WebHook_Alive[0] == "'" and WebHook_Alive[-1] == "'") or \
+        #    (WebHook_Alive[0] == '"' and WebHook_Alive[-1] == '"'):
+        #     WebHook_Alive = WebHook_Alive[1:-1]
 
     if config.has_option('Defaults', 'Webhook_Alert'):
-        WebHook_Alert = config['Defaults']['Webhook_Alert']
-        if (WebHook_Alert[0] == "'" and WebHook_Alert[-1] == "'") or \
-           (WebHook_Alert[0] == '"' and WebHook_Alert[-1] == '"'):
-            WebHook_Alert = WebHook_Alert[1:-1]
+        WebHooks['WebHook_Alert'] = config['Defaults']['Webhook_Alert']
+        WebHooks['WebHook_Alert'] = Clean_Quotes( WebHooks['WebHook_Alert'] )
+        # if (WebHook_Alert[0] == "'" and WebHook_Alert[-1] == "'") or \
+        #    (WebHook_Alert[0] == '"' and WebHook_Alert[-1] == '"'):
+        #     WebHook_Alert = WebHook_Alert[1:-1]
 
 #====================================================================================================
 # See if the config file contains the AWS access keys
@@ -393,13 +404,15 @@ def Read_Configuration(AWS_Keys, HealthCheck):
         AWS_Keys['AWS_Secret_Access_Key'] = config['Credentials']['AWS_Secret_Access_Key']
 
 # Trim quotes from the key values if the INI file uses them
-        if (AWS_Keys['AWS_Access_Key_ID'][0] == "'" and AWS_Keys['AWS_Access_Key_ID'][-1] == "'") or \
-           (AWS_Keys['AWS_Access_Key_ID'][0] == '"' and AWS_Keys['AWS_Access_Key_ID'][-1] == '"'):
-            AWS_Keys['AWS_Access_Key_ID'] = AWS_Keys['AWS_Access_Key_ID'][1:-1]
- 
-        if (AWS_Keys['AWS_Secret_Access_Key'][0] == "'" and AWS_Keys['AWS_Secret_Access_Key'][-1] == "'") or \
-           (AWS_Keys['AWS_Secret_Access_Key'][0] == '"' and AWS_Keys['AWS_Secret_Access_Key'][-1] == '"'):
-            AWS_Keys['AWS_Secret_Access_Key'] = AWS_Keys['AWS_Secret_Access_Key'][1:-1]
+        # if (AWS_Keys['AWS_Access_Key_ID'][0] == "'" and AWS_Keys['AWS_Access_Key_ID'][-1] == "'") or \
+        #    (AWS_Keys['AWS_Access_Key_ID'][0] == '"' and AWS_Keys['AWS_Access_Key_ID'][-1] == '"'):
+        #     AWS_Keys['AWS_Access_Key_ID'] = AWS_Keys['AWS_Access_Key_ID'][1:-1]
+        AWS_Keys['AWS_Access_Key_ID'] = Clean_Quotes( AWS_Keys['AWS_Access_Key_ID'] )
+     
+        # if (AWS_Keys['AWS_Secret_Access_Key'][0] == "'" and AWS_Keys['AWS_Secret_Access_Key'][-1] == "'") or \
+        #    (AWS_Keys['AWS_Secret_Access_Key'][0] == '"' and AWS_Keys['AWS_Secret_Access_Key'][-1] == '"'):
+        #     AWS_Keys['AWS_Secret_Access_Key'] = AWS_Keys['AWS_Secret_Access_Key'][1:-1]
+        AWS_Keys['AWS_Secret_Access_Key'] = Clean_Quotes( AWS_Keys['AWS_Secret_Access_Key'] )
 
 #====================================================================================================
 # See if the config file contains the AWS credential profile
@@ -408,9 +421,10 @@ def Read_Configuration(AWS_Keys, HealthCheck):
         AWS_Keys['AWS_Credential_Profile'] = config['Credentials']['AWS_Credential_Profile']
 
 # Trim quotes from the key values if the INI file uses them
-        if (AWS_Keys['AWS_Credential_Profile'][0] == "'" and AWS_Keys['AWS_Credential_Profile'][-1] == "'") or \
-           (AWS_Keys['AWS_Credential_Profile'][0] == '"' and AWS_Keys['AWS_Credential_Profile'][-1] == '"'):
-            AWS_Keys['AWS_Credential_Profile'] = AWS_Keys['AWS_Credential_Profile'][1:-1]
+        # if (AWS_Keys['AWS_Credential_Profile'][0] == "'" and AWS_Keys['AWS_Credential_Profile'][-1] == "'") or \
+        #    (AWS_Keys['AWS_Credential_Profile'][0] == '"' and AWS_Keys['AWS_Credential_Profile'][-1] == '"'):
+        #     AWS_Keys['AWS_Credential_Profile'] = AWS_Keys['AWS_Credential_Profile'][1:-1]
+        AWS_Keys['AWS_Credential_Profile'] = Clean_Quotes( AWS_Keys['AWS_Credential_Profile'] )
     else:
 # If the INI file does not list a credentials profile then assume the default value
         AWS_Keys['AWS_Credential_Profile'] = os.environ.get('AWS_PROFILE','route53_user')
@@ -426,8 +440,8 @@ def Read_Configuration(AWS_Keys, HealthCheck):
     log.debug("Exception interval loaded: {}".format(Exception_Interval))
     log.debug("TTL: {}".format(TTL_Interval))
     log.debug("Sleep_Time_Initial_Autherisation: {}".format(Sleep_Time_Initial_Autherisation))
-    log.debug("Webhook_Alive: {}".format(WebHook_Alive))
-    log.debug("Webhook_Alert: {}".format(WebHook_Alert))
+    log.debug("Webhook_Alive: {}".format(WebHooks['WebHook_Alive']))
+    log.debug("Webhook_Alert: {}".format(WebHooks['WebHook_Alert']))
     if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
         log.debug("AWS Access keys set from config file")
     return
@@ -549,6 +563,8 @@ def main():
     # global Healthcheck_Interval_File_Name
     # global Healthcheck_Heartbeat_File_Name
     # global Heartbeat_Enabled
+    
+    App_Version = "2.2.0.0"
 
     HealthCheck = {
         'Healthcheck_Interval_File_Name'  : None,
@@ -560,6 +576,11 @@ def main():
         'AWS_Access_Key_ID'      : None,
         'AWS_Secret_Access_Key'  : None,
         'AWS_Credential_Profile' : None
+    }    
+
+    WebHooks = {
+        'WebHook_Alive' : None,
+        'WebHook_Alert' : None
     }    
 
     # try:
@@ -590,7 +611,7 @@ def main():
     Config_File_Moddate = os.stat(Config_File_Name)[8]
     Config_File_Previous_Timestamp = time.ctime(Config_File_Moddate)
 
-    Read_Configuration(AWS_Keys, HealthCheck)
+    Read_Configuration(AWS_Keys, HealthCheck, WebHooks)
 
 #====================================================================================================
 # Try to set up the AWS session object from the credientials file or environment variables
@@ -689,11 +710,11 @@ def main():
 # After the flow, handle any issues updating the IP with the Exception_Interval flow
 #====================================================================================================
             if Issue_Updating:
-                Call_Webhook( WebHook_Alert + "UpdateIssue" )
+                Call_Webhook( WebHooks['WebHook_Alert'] + "UpdateIssue" )
                 log.warning("Sleeping for the exception interval {} seconds after an issue updating.".format(Exception_Interval))
                 time.sleep(Exception_Interval)        
             else:
-                Call_Webhook( WebHook_Alive )
+                Call_Webhook( WebHooks['WebHook_Alive'] )
     # If the environment variable for healthcheck was set, touch the test file
                 if HealthCheck['Heartbeat_Enabled']:
                     pathlib.Path( HealthCheck['Healthcheck_Heartbeat_File_Name'] ).touch()
@@ -720,7 +741,7 @@ def main():
 # Ultimately, check if the user killed the program
 #====================================================================================================
     except (KeyboardInterrupt):
-        Call_Webhook( WebHook_Alert + "UserTerm" )
+        Call_Webhook( WebHooks['WebHook_Alert'] + "UserTerm" )
         log.warning("User terminated program")
         return
 
