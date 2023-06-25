@@ -2,7 +2,7 @@ export AWS_CONFIG_PATH=~/Documents/Software/AWS/Amazon_AWS_DDNS_Client/config/
 export HEALTHCHECK_HEARTBEAT_FILE=~/Documents/Software/AWS/Amazon_AWS_DDNS_Client/config/heartbeat
 export HEALTHCHECK_INTERVAL_FILE=~/Documents/Software/AWS/Amazon_AWS_DDNS_Client/config/max_age
 export AWS_ACCESS_KEY_ID=AAAAAAAAAAAAAAAAAAAAAA
-export AWS_SECRET_ACCESS_KEY=BBBBBBBBBBBBBBBBBBBBBBBBb
+export AWS_SECRET_ACCESS_KEY=BBBBBBBBBBBBBBBBBBBBBBBBB
 export AWS_PROFILE=route53_user
 export AWS_SHARED_CREDENTIALS_FILE=~/Documents/Software/AWS/Amazon_AWS_DDNS_Client
 
