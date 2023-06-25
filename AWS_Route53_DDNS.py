@@ -29,10 +29,9 @@ Sleep_Time_Initial_Autherisation = 0
 Sleep_Time_Inter_Domain = 0
 WebHook_Alive = None
 WebHook_Alert = None
-AWS_Credential_Profile=None
-Healthcheck_Interval_File_Name = None
-Healthcheck_Heartbeat_File_Name = None
-Heartbeat_Enabled = False
+# Healthcheck_Interval_File_Name = None
+# Healthcheck_Heartbeat_File_Name = None
+# Heartbeat_Enabled = False
 
 #====================================================================================================
 # Setup file paths & names environment variables
@@ -263,18 +262,19 @@ def Get_External_IP_From_AWS():
 # If health checking is enabled, update the file that conveys the update interval to the 
 # shell script.
 #====================================================================================================
-def Write_Interval(Update_Interval):
-    global Healthcheck_Interval_File_Name
+def Write_Health_Interval(HealthCheck, Update_Interval):
+#    global Healthcheck_Interval_File_Name
 
     Health_Interval = Update_Interval + int( float(Update_Interval) / 20.0)        
 
-    if Healthcheck_Interval_File_Name:
+    if HealthCheck['Healthcheck_Interval_File_Name']:
         try:
-            open(Healthcheck_Interval_File_Name, 'w')
-            with open(Healthcheck_Interval_File_Name, 'w') as f:
+            #open(HealthCheck['Healthcheck_Interval_File_Name'], 'w')
+            with open(HealthCheck['Healthcheck_Interval_File_Name'], 'w') as f:
                 f.write(str(Health_Interval))
         except Exception as e:
-            log.error("Can't write to update interval file: {}".format(Healthcheck_Interval_File_Name))
+            log.error("Can't write to update interval file: {}".format(HealthCheck['Healthcheck_Interval_File_Name']))
+            return
 
     log.debug("Updating health check interval to: {} seconds".format(Health_Interval))
     return
@@ -282,7 +282,7 @@ def Write_Interval(Update_Interval):
 #====================================================================================================
 # Read the app configuration from the .INI file.
 #====================================================================================================
-def Read_Configuration(AWS_Keys):
+def Read_Configuration(AWS_Keys, HealthCheck):
     global Domain_Names
     global Record_Names
     global Update_Interval
@@ -295,8 +295,8 @@ def Read_Configuration(AWS_Keys):
 #    global AWS_Access_Key_ID 
 #    global AWS_Secret_Access_Key
 #    global AWS_Credential_Profile
-    global Healthcheck_Interval_File_Name
-    global Heartbeat_Enabled
+#    global Healthcheck_Interval_File_Name
+#    global Heartbeat_Enabled
 
     config = configparser.ConfigParser()
     try:
@@ -418,8 +418,8 @@ def Read_Configuration(AWS_Keys):
 #====================================================================================================
 # Write the logged update interval to the file used in the health check
 #====================================================================================================
-    if Heartbeat_Enabled:
-        Write_Interval(Update_Interval)
+    if HealthCheck['Heartbeat_Enabled']:
+        Write_Health_Interval(HealthCheck, Update_Interval)
 
     log.debug("Domains and records loaded: {} {}".format(Domain_Names, Record_Names))
     log.debug("Interval loaded: {}".format(Update_Interval))
@@ -517,13 +517,44 @@ def Try_Credential_Flow(AWS_Keys):
                         exit(1)
     return Route53_Session
 
+def Init_Health(HealthCheck):
+    HealthCheck['Healthcheck_Heartbeat_File_Name'] = os.environ.get('HEALTHCHECK_HEARTBEAT_FILE', None)
+    HealthCheck['Healthcheck_Interval_File_Name']  = os.environ.get('HEALTHCHECK_INTERVAL_FILE', None)
+
+    if( HealthCheck['Healthcheck_Heartbeat_File_Name'] and HealthCheck['Healthcheck_Interval_File_Name']):
+        pathlib.Path( HealthCheck['Healthcheck_Heartbeat_File_Name'] ).touch()
+        HealthCheck['Heartbeat_Enabled'] = True
+        log.debug("Health file names found.")
+    else:
+        log.debug("Health file names not found.")
+
+    # try:
+    #     HealthCheck['Healthcheck_Heartbeat_File_Name'] = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
+    #     Heartbeat_Enabled = True
+    #     pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
+    #     try:
+    #         Healthcheck_Interval_File_Name = os.environ['HEALTHCHECK_INTERVAL_FILE']
+    #     except KeyError: 
+    #         Healthcheck_Interval_File_Name = None
+    #         Heartbeat_Enabled = False
+    # except KeyError: 
+    #     Heartbeat_Enabled = False
+
+    return
+
 #====================================================================================================
 # Main function
 #====================================================================================================
 def main():
-    global Healthcheck_Interval_File_Name
-    global Healthcheck_Heartbeat_File_Name
-    global Heartbeat_Enabled
+    # global Healthcheck_Interval_File_Name
+    # global Healthcheck_Heartbeat_File_Name
+    # global Heartbeat_Enabled
+
+    HealthCheck = {
+        'Healthcheck_Interval_File_Name'  : None,
+        'Healthcheck_Heartbeat_File_Name' : None,
+        'Heartbeat_Enabled'               : False
+    }    
 
     AWS_Keys = {
         'AWS_Access_Key_ID'      : None,
@@ -531,20 +562,23 @@ def main():
         'AWS_Credential_Profile' : None
     }    
 
-    try:
-        Healthcheck_Heartbeat_File_Name = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
-        Heartbeat_Enabled = True
-        pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
-        try:
-            Healthcheck_Interval_File_Name = os.environ['HEALTHCHECK_INTERVAL_FILE']
-        except KeyError: 
-            Healthcheck_Interval_File_Name = None
-            Heartbeat_Enabled = False
-    except KeyError: 
-        Heartbeat_Enabled = False
+    # try:
+    #     Healthcheck_Heartbeat_File_Name = os.environ['HEALTHCHECK_HEARTBEAT_FILE']
+    #     Heartbeat_Enabled = True
+    #     pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
+    #     try:
+    #         Healthcheck_Interval_File_Name = os.environ['HEALTHCHECK_INTERVAL_FILE']
+    #     except KeyError: 
+    #         Healthcheck_Interval_File_Name = None
+    #         Heartbeat_Enabled = False
+    # except KeyError: 
+    #     Heartbeat_Enabled = False
 
     Docker_Version = os.environ.get('AWS_DOCKER_VERSION', 'None')
     log.info("Program starting. App version is {}, docker container version is {}".format(App_Version, Docker_Version))
+
+    Init_Health(HealthCheck)
+    ###############print(HealthCheck)
 
 #====================================================================================================
 # Read the configuration file
@@ -556,7 +590,7 @@ def main():
     Config_File_Moddate = os.stat(Config_File_Name)[8]
     Config_File_Previous_Timestamp = time.ctime(Config_File_Moddate)
 
-    Read_Configuration(AWS_Keys)
+    Read_Configuration(AWS_Keys, HealthCheck)
 
 #====================================================================================================
 # Try to set up the AWS session object from the credientials file or environment variables
@@ -661,9 +695,9 @@ def main():
             else:
                 Call_Webhook( WebHook_Alive )
     # If the environment variable for healthcheck was set, touch the test file
-                if Heartbeat_Enabled & os.path.isfile(Config_File_Name):
-                    pathlib.Path( Healthcheck_Heartbeat_File_Name ).touch()
-                    log.debug("Touching healthcheck file {}".format(Healthcheck_Heartbeat_File_Name))
+                if HealthCheck['Heartbeat_Enabled']:
+                    pathlib.Path( HealthCheck['Healthcheck_Heartbeat_File_Name'] ).touch()
+                    log.debug("Touching healthcheck file {}".format(HealthCheck['Healthcheck_Heartbeat_File_Name']))
                 log.info("Sleeping for {} seconds".format(Update_Interval))
     # Go to sleep for the duration
                 time.sleep(Update_Interval)        
