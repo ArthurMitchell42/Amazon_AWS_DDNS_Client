@@ -21,6 +21,18 @@ The Amazon AWS Route53 DDNS Client
 </thead>
 <tbody>
 <tr> 
+<td style="vertical-align:top">26/06/2023</td>
+<td style="vertical-align:top">2.2.0.1</td>
+<td align="left">
+<ol>
+<li>Corrected spelling of Authorisation parameter.</li>
+</ol>
+
+Built and pushed to DockerHub as https://hub.docker.com/r/kronos443/aws-route53-ddns tag V2.2.0.0
+
+><b>Please note, a configuration issue resulting in any domain record having an issue updating will cause the docker container to be be marked as unhealthy. Be mindful of this if your system is set to restart a container that marks itself as unhealthy since the solution may be to check the log and find any logical issues in the AWS configuration which might have caused this state rather than just restarting the container.</b>
+</tr>
+<tr> 
 <td style="vertical-align:top">25/06/2023</td>
 <td style="vertical-align:top">2.2.0.0</td>
 <td align="left">
@@ -28,6 +40,7 @@ The Amazon AWS Route53 DDNS Client
 <ol>
 <li>Added catches for several issues raised but AWS service outages.</li>
 <li>Code tidy and re-structure.</li>
+<li>Corrected spelling of Authorisation parameter.</li>
 </ol>
 
 Built and pushed to DockerHub as https://hub.docker.com/r/kronos443/aws-route53-ddns tag V2.2.0.0
@@ -69,7 +82,7 @@ Built and pushed to DockerHub as https://hub.docker.com/r/kronos443/aws-route53-
   <li>Added support for docker health checking, if needed, using a "touched" file</li>
   <li>Added support for an environment variable, HEALTHCHECK_HEARTBEAT_FILE, defining the file path and name.</li>
   <li><b>Note, a failure to go round the main program loop or a configuration issue resulting in an issue updating a domain record will prevent the health check file from being "touched". Be mindful of this if your system is set to restart a conatiner that marks itself as unhealthy as the solution may be to check the log to find a logical issue in the AWS configuration which caused the condition rather than just restarting it.</b></li>
-  <li>Added Config parameters Sleep_Time_Initial_Autherisation and Sleep_Time_Inter_Domain to control the hit rate on AWS</li>
+  <li>Added Config parameters Sleep_Time_Initial_Authorisation and Sleep_Time_Inter_Domain to control the hit rate on AWS</li>
   <li>Changes to support re-reading a config file if it's edited while the app is running. This removes the need to re-start the app/container if the configuration is changed. This is intended to harden the system and lower maintainance.</li>
   </ol>
 </td>
@@ -153,7 +166,7 @@ Exception_Interval = 300
 Log_Level_Logfile = Info 
 Log_Level_Console = Warning 
 TTL = 3600
-Sleep_Time_Initial_Autherisation = 1
+Sleep_Time_Initial_Authorisation = 1
 Sleep_Time_Inter_Domain = 1
 WebHook_Alive = 'HTTP://x.x.x.x/aaaaaaaaa'
 WebHook_Alert = 'HTTP://x.x.x.x/aaaaaaaaa'
@@ -240,10 +253,10 @@ The parameters for the configuration file are as follows.
 <td>The time to pause between consucutive domain interrogations.</td>
 </tr>
 <tr>
-<td align="left">Sleep_Time_Initial_Autherisation</td>
+<td align="left">Sleep_Time_Initial_Authorisation</td>
 <td>Optional</td>
 <td>1</td>
-<td>The time to pause between autherisation and domain interrogations.</td>
+<td>The time to pause between Authorisation and domain interrogations.</td>
 </tr>  
 <tr>
 <td align="left">WebHook_Alive </td>

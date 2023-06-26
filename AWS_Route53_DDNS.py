@@ -8,7 +8,7 @@ import ipaddress
 import botocore
 import boto3
 import time
-import os          # For enviromnent variables
+import os          # For environment variables
 import pathlib     # For file touching
 import json        # For webhooks
 import re          # From the text cleaning functions
@@ -330,12 +330,12 @@ def Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domain
     else:
         Common_Parameters['TTL_Interval'] = 3600
 
-    if config.has_option('Defaults', 'Sleep_Time_Initial_Autherisation'):
-        Common_Parameters['Sleep_Time_Initial_Autherisation'] = int(config['Defaults']['Sleep_Time_Initial_Autherisation'])
-        if Common_Parameters['Sleep_Time_Initial_Autherisation'] < 1: 
-            Common_Parameters['Sleep_Time_Initial_Autherisation'] = 1
+    if config.has_option('Defaults', 'Sleep_Time_Initial_Authorisation'):
+        Common_Parameters['Sleep_Time_Initial_Authorisation'] = int(config['Defaults']['Sleep_Time_Initial_Authorisation'])
+        if Common_Parameters['Sleep_Time_Initial_Authorisation'] < 1: 
+            Common_Parameters['Sleep_Time_Initial_Authorisation'] = 1
     else:
-        Common_Parameters['Sleep_Time_Initial_Autherisation'] = 1
+        Common_Parameters['Sleep_Time_Initial_Authorisation'] = 1
 
     if config.has_option('Defaults', 'Sleep_Time_Inter_Domain'):
         Common_Parameters['Sleep_Time_Inter_Domain'] = int(config['Defaults']['Sleep_Time_Inter_Domain'])
@@ -383,7 +383,7 @@ def Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domain
     log.debug("Interval loaded: {}".format(Common_Parameters['Update_Interval']))
     log.debug("Exception interval loaded: {}".format(Common_Parameters['Exception_Interval']))
     log.debug("TTL: {}".format(Common_Parameters['TTL_Interval']))
-    log.debug("Sleep_Time_Initial_Autherisation: {}".format(Common_Parameters['Sleep_Time_Initial_Autherisation']))
+    log.debug("Sleep_Time_Initial_Authorisation: {}".format(Common_Parameters['Sleep_Time_Initial_Authorisation']))
     log.debug("Webhook_Alive: {}".format(WebHooks['WebHook_Alive']))
     log.debug("Webhook_Alert: {}".format(WebHooks['WebHook_Alert']))
     if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
@@ -391,7 +391,7 @@ def Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domain
     return
 
 #====================================================================================================
-# Try to set up the AWS session object from the credientials file or environment variables
+# Try to set up the AWS session object from the credentials file or environment variables
 #   1. Check if credentials were found in the config file
 #   2. Check if the credentials were set as environment variables
 #   3. Check for the _FILE environment variables and load from them if present 
@@ -513,7 +513,7 @@ def main():
     #================================================
     # Set some main values
     #================================================
-    App_Version = "2.2.0.0"
+    App_Version = "2.2.0.1"
     Docker_Version = os.environ.get('AWS_DOCKER_VERSION', 'None')
     log.info("Program starting. App version is {}".format(App_Version))
     if( Docker_Version ):
@@ -549,7 +549,7 @@ def main():
         'Update_Interval'                  : 0,
         'Exception_Interval'               : 0,
         'TTL_Interval'                     : 0,
-        'Sleep_Time_Initial_Autherisation' : 0,
+        'Sleep_Time_Initial_Authorisation' : 0,
         'Sleep_Time_Inter_Domain'          : 0
     }    
 
@@ -568,7 +568,7 @@ def main():
     Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domains, Common_Parameters)
 
 #====================================================================================================
-# Try to set up the AWS session object from the credientials file or environment variables
+# Try to set up the AWS session object from the credentials file or environment variables
 #   1. Check if credentials were found in the config file
 #   2. Check if the credentials were set as environment variables
 #   3. Check for the _FILE environment variables and load from them if present 
@@ -597,7 +597,7 @@ def main():
 #====================================================================================================
 # Initialise a false last IP address to force an update check
 #====================================================================================================
-    time.sleep(Common_Parameters['Sleep_Time_Initial_Autherisation'])
+    time.sleep(Common_Parameters['Sleep_Time_Initial_Authorisation'])
 
 #====================================================================================================
 # The main functional loop
