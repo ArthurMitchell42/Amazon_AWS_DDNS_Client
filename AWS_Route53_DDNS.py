@@ -19,15 +19,13 @@ from urllib.error   import URLError
 #====================================================================================================
 # Setup file paths & names from environment variables
 #====================================================================================================
-File_Paths = os.environ.get('AWS_CONFIG_PATH', "./")
-if( File_Paths[-1] != '/' ):
-    File_Paths = File_Paths + '/'
+Files_Path = os.environ.get('AWS_CONFIG_PATH', ".")
 
-if( not os.path.exists(File_Paths) ):
-    print("Path {} does not exist. Set the environment variable AWS_CONFIG_PATH to point to the directory containing your AWS_Route53_DDNS.ini file.".format(File_Paths))
+if( not os.path.exists(Files_Path) ):
+    print("Path {} does not exist. Set the environment variable AWS_CONFIG_PATH to point to the directory containing your AWS_Route53_DDNS.ini file.".format(Files_Path))
     exit(1)
 
-Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
+Log_File_Name = os.path.join(Files_Path, "AWS_Route53_DDNS.log")
 
 #====================================================================================================
 # Set up logging objects and logging to a file and the console
@@ -49,36 +47,37 @@ def Clean_Quotes( s ):
 #====================================================================================================
 # Call a webhook
 #====================================================================================================
-def Call_Webhook( Hook ):
-    if not Hook:
+def Call_Webhook( Hook_List ):
+    if len(Hook_List) == 0:
         log.debug("Webhook is not set.")
         return
 
-    log.debug("Calling webhook {}".format(Hook))
+    log.debug("Calling webhook(s) {}".format(Hook_List))
 
-    try:
-        res = urlopen(Hook)
-    except URLError as e:
-        if hasattr(e, 'reason'):
-            log.warning("Failed to call webhook. Reason: %s", e.reason)
-        elif hasattr(e, 'code'):
-            log.warning("The webhook server could't fulfill the request. Error code: %s", e.code)
-        return
-    else:
-        resp = res.getcode()
-        if resp != 200:
-            log.warning("The webhook call returned code: ", resp)
+    for h in range(0,len(Hook_List)):
+        try:
+            res = urlopen(Hook_List[h])
+        except URLError as e:
+            if hasattr(e, 'reason'):
+                log.warning("Failed to call webhook. Reason: %s", e.reason)
+            elif hasattr(e, 'code'):
+                log.warning("The webhook server could not fulfill the request. Error code: {}}".format(e.code))
+            return
+        else:
+            resp = res.getcode()
+            if resp != 200:
+                log.warning("The webhook call returned code: ", resp)
 
-        page = res.read()
-        data_json = json.loads(page)
-        
-        if ("ok" in data_json):
-            if (data_json["ok"] != True):
-                if ("msg" in data_json):
-                    jmsg = data_json["msg"]
-                else:
-                    jmsg = "none"
-                log.warning("The webhook returned an 'ok' element as not True with the message '{}'".format(jmsg))
+            page = res.read()
+            data_json = json.loads(page)
+            
+            if ("ok" in data_json):
+                if (data_json["ok"] != True):
+                    if ("msg" in data_json):
+                        jmsg = data_json["msg"]
+                    else:
+                        jmsg = "none"
+                    log.warning("The webhook returned an 'ok' element as not True with the message '{}'".format(jmsg))
     return True
 
 #====================================================================================================
@@ -344,13 +343,33 @@ def Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domain
     else:
         Common_Parameters['Sleep_Time_Inter_Domain'] = 1
 
+    #====================================================================================================
+    # Load the webhooks, if present
+    #====================================================================================================
+    WebHooks['WebHook_Alive'] = []
+    WebHooks['WebHook_Alert'] = []
+
     if config.has_option('Defaults', 'Webhook_Alive'):
-        WebHooks['WebHook_Alive'] = config['Defaults']['Webhook_Alive']
-        WebHooks['WebHook_Alive'] = Clean_Quotes( WebHooks['WebHook_Alive'] )
+        Hook = config['Defaults']['Webhook_Alive']
+        Hook = Clean_Quotes( Hook )
+        WebHooks['WebHook_Alive'].append( Hook )
+
+    for h in range(1, 10):
+        if config.has_option('Defaults', 'Webhook_Alive'+str(h)):
+            Hook = config['Defaults']['Webhook_Alive'+str(h)]
+            Hook = Clean_Quotes( Hook )
+            WebHooks['WebHook_Alive'].append( Hook )
 
     if config.has_option('Defaults', 'Webhook_Alert'):
-        WebHooks['WebHook_Alert'] = config['Defaults']['Webhook_Alert']
-        WebHooks['WebHook_Alert'] = Clean_Quotes( WebHooks['WebHook_Alert'] )
+        Hook = config['Defaults']['Webhook_Alert']
+        Hook = Clean_Quotes( Hook )
+        WebHooks['WebHook_Alert'].append( Hook )
+
+    for h in range(1, 10):
+        if config.has_option('Defaults', 'WebHook_Alert'+str(h)):
+            Hook = config['Defaults']['WebHook_Alert'+str(h)]
+            Hook = Clean_Quotes( Hook )
+            WebHooks['WebHook_Alert'].append( Hook )
 
     #====================================================================================================
     # See if the config file contains the AWS access keys
@@ -387,7 +406,7 @@ def Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domain
     log.debug("Webhook_Alive: {}".format(WebHooks['WebHook_Alive']))
     log.debug("Webhook_Alert: {}".format(WebHooks['WebHook_Alert']))
     if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
-        log.debug("AWS Access keys set from config file")
+        log.debug("AWS Access keys set from config file.")
     return
 
 #====================================================================================================
@@ -403,8 +422,7 @@ def Try_Credential_Flow(AWS_Keys):
 #========================================
     if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
         try:
-            Route53_Session = boto3.Session(aws_access_key_id=AWS_Keys['AWS_Access_Key_ID'], 
-                                            aws_secret_access_key=AWS_Keys['AWS_Secret_Access_Key'] )
+            Route53_Session = boto3.Session(aws_access_key_id=AWS_Keys['AWS_Access_Key_ID'], aws_secret_access_key=AWS_Keys['AWS_Secret_Access_Key'] )
             log.debug("Credentials found in the config (.ini) file successfully created a session.")
         except Exception as error:
             log.error("Credentials found in the config (.ini) file failed to successfully create a session. Error response: ".format(error))
@@ -513,13 +531,13 @@ def main():
     #================================================
     # Set some main values
     #================================================
-    App_Version = "2.2.0.1"
+    App_Version = "2.2.1.0"
     Docker_Version = os.environ.get('AWS_DOCKER_VERSION', 'None')
     log.info("Program starting. App version is {}".format(App_Version))
     if( Docker_Version ):
         log.info("Docker environment is detected, container version is {}".format(Docker_Version))
 
-    Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
+    Config_File_Name = os.path.join(Files_Path, "AWS_Route53_DDNS.ini")
 
     Last_External_Address = "0.0.0.0"
 
@@ -536,8 +554,8 @@ def main():
     }    
 
     WebHooks = {
-        'WebHook_Alive' : None,
-        'WebHook_Alert' : None
+        'WebHook_Alive' : [],
+        'WebHook_Alert' : []
     }    
 
     Domains = {
@@ -575,7 +593,6 @@ def main():
 #   4. Try to get credentials from the default credentials file
 #====================================================================================================
     Route53_Session = Try_Credential_Flow(AWS_Keys)
-
     # Create the Route53 client object
     Route53_Client = Route53_Session.client( 'route53' )
 
@@ -664,7 +681,7 @@ def main():
 # After the flow, handle any issues updating the IP with the Exception_Interval flow
 #====================================================================================================
             if Issue_Updating:
-                Call_Webhook( WebHooks['WebHook_Alert'] + "UpdateIssue" )
+                Call_Webhook( WebHooks['WebHook_Alert'] )
                 log.warning("Sleeping for the exception interval {} seconds after an issue updating.".format(Common_Parameters['Exception_Interval']))
                 time.sleep(Common_Parameters['Exception_Interval'])        
             else:
@@ -695,7 +712,7 @@ def main():
 # Ultimately, check if the user killed the program
 #====================================================================================================
     except (KeyboardInterrupt):
-        Call_Webhook( WebHooks['WebHook_Alert'] + "UserTerm" )
+        Call_Webhook( WebHooks['WebHook_Alert'] )
         log.warning("User terminated program")
         return
 
