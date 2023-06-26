@@ -19,15 +19,19 @@ from urllib.error   import URLError
 #====================================================================================================
 # Setup file paths & names from environment variables
 #====================================================================================================
-File_Paths = os.environ.get('AWS_CONFIG_PATH', "./")
-if( File_Paths[-1] != '/' ):
-    File_Paths = File_Paths + '/'
+# File_Paths = os.environ.get('AWS_CONFIG_PATH', "./")
+# if( File_Paths[-1] != '/' ):
+#     File_Paths = File_Paths + '/'
 
-if( not os.path.exists(File_Paths) ):
-    print("Path {} does not exist. Set the environment variable AWS_CONFIG_PATH to point to the directory containing your AWS_Route53_DDNS.ini file.".format(File_Paths))
+Files_Path = os.environ.get('AWS_CONFIG_PATH', ".")
+#os.path.join(Files_Path, '')
+
+if( not os.path.exists(Files_Path) ):
+    print("Path {} does not exist. Set the environment variable AWS_CONFIG_PATH to point to the directory containing your AWS_Route53_DDNS.ini file.".format(Files_Path))
     exit(1)
 
-Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
+#Log_File_Name = File_Paths + "AWS_Route53_DDNS.log"
+Log_File_Name = os.path.join(Files_Path, "AWS_Route53_DDNS.log")
 
 #====================================================================================================
 # Set up logging objects and logging to a file and the console
@@ -62,7 +66,7 @@ def Call_Webhook( Hook ):
         if hasattr(e, 'reason'):
             log.warning("Failed to call webhook. Reason: %s", e.reason)
         elif hasattr(e, 'code'):
-            log.warning("The webhook server could't fulfill the request. Error code: %s", e.code)
+            log.warning("The webhook server could't fulfil the request. Error code: %s", e.code)
         return
     else:
         resp = res.getcode()
@@ -387,7 +391,7 @@ def Read_Configuration(Config_File_Name, AWS_Keys, HealthCheck, WebHooks, Domain
     log.debug("Webhook_Alive: {}".format(WebHooks['WebHook_Alive']))
     log.debug("Webhook_Alert: {}".format(WebHooks['WebHook_Alert']))
     if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
-        log.debug("AWS Access keys set from config file")
+        log.debug("AWS Access keys set from config file. {} {}".format(AWS_Keys['AWS_Access_Key_ID'], AWS_Keys['AWS_Secret_Access_Key']))
     return
 
 #====================================================================================================
@@ -403,8 +407,7 @@ def Try_Credential_Flow(AWS_Keys):
 #========================================
     if( AWS_Keys['AWS_Access_Key_ID'] and AWS_Keys['AWS_Secret_Access_Key'] ):
         try:
-            Route53_Session = boto3.Session(aws_access_key_id=AWS_Keys['AWS_Access_Key_ID'], 
-                                            aws_secret_access_key=AWS_Keys['AWS_Secret_Access_Key'] )
+            Route53_Session = boto3.Session(aws_access_key_id=AWS_Keys['AWS_Access_Key_ID'], aws_secret_access_key=AWS_Keys['AWS_Secret_Access_Key'] )
             log.debug("Credentials found in the config (.ini) file successfully created a session.")
         except Exception as error:
             log.error("Credentials found in the config (.ini) file failed to successfully create a session. Error response: ".format(error))
@@ -519,7 +522,8 @@ def main():
     if( Docker_Version ):
         log.info("Docker environment is detected, container version is {}".format(Docker_Version))
 
-    Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
+    #Config_File_Name = File_Paths + "AWS_Route53_DDNS.ini"
+    Config_File_Name = os.path.join(Files_Path, "AWS_Route53_DDNS.ini")
 
     Last_External_Address = "0.0.0.0"
 
@@ -575,7 +579,6 @@ def main():
 #   4. Try to get credentials from the default credentials file
 #====================================================================================================
     Route53_Session = Try_Credential_Flow(AWS_Keys)
-
     # Create the Route53 client object
     Route53_Client = Route53_Session.client( 'route53' )
 
