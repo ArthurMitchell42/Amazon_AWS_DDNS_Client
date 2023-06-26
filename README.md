@@ -21,6 +21,18 @@ The Amazon AWS Route53 DDNS Client
 </thead>
 <tbody>
 <tr> 
+<td style="vertical-align:top">27/06/2023</td>
+<td style="vertical-align:top">2.2.1.0</td>
+<td align="left">
+<ol>
+<li>Added support for multiple web hooks.</li>
+</ol>
+
+Built and pushed to DockerHub as https://hub.docker.com/r/kronos443/aws-route53-ddns tag V2.2.0.0
+
+><b>Please note, a configuration issue resulting in any domain record having an issue updating will cause the docker container to be be marked as unhealthy. Be mindful of this if your system is set to restart a container that marks itself as unhealthy since the solution may be to check the log and find any logical issues in the AWS configuration which might have caused this state rather than just restarting the container.</b>
+</tr>
+<tr> 
 <td style="vertical-align:top">26/06/2023</td>
 <td style="vertical-align:top">2.2.0.1</td>
 <td align="left">
@@ -169,7 +181,11 @@ TTL = 3600
 Sleep_Time_Initial_Authorisation = 1
 Sleep_Time_Inter_Domain = 1
 WebHook_Alive = 'HTTP://x.x.x.x/aaaaaaaaa'
+WebHook_Alive1 = 'HTTP://x.x.x.x/aaaaaaaaa'
+WebHook_Alive2 = 'HTTP://x.x.x.x/aaaaaaaaa'
 WebHook_Alert = 'HTTP://x.x.x.x/aaaaaaaaa'
+WebHook_Alert1 = 'HTTP://x.x.x.x/aaaaaaaaa'
+WebHook_Alert2 = 'HTTP://x.x.x.x/aaaaaaaaa'
 </tt></pre>
 
 <h2>The Configuration File Parameters</h2>
@@ -263,13 +279,13 @@ The parameters for the configuration file are as follows.
 <td>Optional</td>
 <td>-</td>
 <td>The given URL is called when the update of <b>all records was successful.</b>
-URL's may be quoted.</td>
+URL's may be quoted. Up to 10 web hooks are supported by adding options WebHook_Alive1, WebHook_Alive2, ... to WebHook_Alive9</td>
 </tr>
 <tr>
 <td align="left">WebHook_Alert </td>
 <td>Optional</td>
 <td>-</td>
-<td>The given URL is called when the update of <b>any record was unsuccessful.</b> URL's may be quoted.</td>
+<td>The given URL is called when the update of <b>any record was unsuccessful.</b> URL's may be quoted. Up to 10 web hooks are supported by adding options WebHook_Alert1, WebHook_Alert2, ... to WebHook_Alert9</td>
 </tr>
 <tr>
 <td align="left"><b>[Credentials] Section</b></td>
