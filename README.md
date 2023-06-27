@@ -6,7 +6,7 @@ The Amazon AWS Route53 DDNS Client
   <li>Supports <b>multiple domains</b> simultaneously to the same entry point</li>
   <li>Supports <b>specific URL's</b> as well as <b>wild cards</b>. e.g. home.example1.com and *.example2.com </li>
   <li>Wild card domain mapping <b>supports the use of reverse proxy</b> servers to access internal services</li>
-  <li><b>Multiple methods</b> (4) are supported for specifying the AWS credentials for ease of use</li>
+  <li><b>Multiple methods</b> (4) are supported for specifying the AWS credentials for ease of use. See <i>Providing the AWS Credentials</i> below.</li>
   <li>Supports <b>web hooks</b> to monitor correct function and errors. Ideal for use with monitors such as Uptime Kuma.</li>
 </ul>
 </h3>
@@ -80,7 +80,7 @@ Built and pushed to DockerHub as https://hub.docker.com/r/kronos443/aws-route53-
 <td style="vertical-align:top">2.0.0.3</td>
 <td style="vertical-align:top">
   <ol>
-<li>Fixed potential crash on connectivity issue when obtailing the external IP address</li>
+<li>Fixed potential crash on connectivity issue when obtaining the external IP address</li>
 <li>Added try catch to reading the config file</li>
 <li>Improved the docker health check to account for the update duration information</li>
 <li>Added Webhooks for alerting on errors updating and for healthy update</li>
@@ -129,8 +129,6 @@ Install the BOTO3 package:<br>
 On Windows <br>
 
 > pip install boto3 <br>
-
-(In an admin cmd shell) <br>
 
 <h3>Prepair an AWS key</h3>
 <ol>
@@ -266,23 +264,23 @@ The parameters for the configuration file are as follows.
 <td align="left">Sleep_Time_Inter_Domain </td>
 <td>Optional</td>
 <td>1</td>
-<td>The time to pause between consucutive domain interrogations.</td>
+<td>The time to pause between consecutive domain interrogations. <i>Not normally required</i></td>
 </tr>
 <tr>
 <td align="left">Sleep_Time_Initial_Authorisation</td>
 <td>Optional</td>
 <td>1</td>
-<td>The time to pause between Authorisation and domain interrogations.</td>
+<td>The time to pause between Authorisation and domain interrogations. <i>Not normally required</i></td>
 </tr>  
 <tr>
-<td align="left">WebHook_Alive </td>
+<td align="left">WebHook_Alive<br>WebHook_Alive1<br>WebHook_Alive2<br>.<br>WebHook_Alive9</td>
 <td>Optional</td>
 <td>-</td>
 <td>The given URL is called when the update of <b>all records was successful.</b>
 URL's may be quoted. Up to 10 web hooks are supported by adding options WebHook_Alive1, WebHook_Alive2, ... to WebHook_Alive9</td>
 </tr>
 <tr>
-<td align="left">WebHook_Alert </td>
+<td align="left">WebHook_Alert<br>WebHook_Alert1<br>WebHook_Alert2<br>.<br>WebHook_Alert9</td>
 <td>Optional</td>
 <td>-</td>
 <td>The given URL is called when the update of <b>any record was unsuccessful.</b> URL's may be quoted. Up to 10 web hooks are supported by adding options WebHook_Alert1, WebHook_Alert2, ... to WebHook_Alert9</td>
